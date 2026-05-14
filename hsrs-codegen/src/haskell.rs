@@ -452,7 +452,10 @@ fn unwrap_param(name: &str, ty: &FfiType) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{FfiEnum, FfiFunction, FfiFunctionKind, FfiModule, FfiParam, FfiType, ParsedFile};
+    use crate::ir::{
+        FfiEnum, FfiField, FfiFunction, FfiFunctionKind, FfiModule, FfiParam, FfiType,
+        FfiValueType, ParsedFile,
+    };
 
     fn make_module_with_snake_case_fn() -> ParsedFile {
         ParsedFile {
@@ -477,6 +480,29 @@ mod tests {
                         docs: vec![],
                         borsh_return: false,
                         borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "get_state".to_owned(),
+                        c_name: "my_engine_get_state".to_owned(),
+                        kind: FfiFunctionKind::RefMethod,
+                        params: vec![],
+                        return_type: Some(FfiType::ValueType("GameState".to_owned())),
+                        docs: vec![],
+                        borsh_return: true,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "set_state".to_owned(),
+                        c_name: "my_engine_set_state".to_owned(),
+                        kind: FfiFunctionKind::MutMethod,
+                        params: vec![FfiParam {
+                            name: "new_state".to_owned(),
+                            ty: FfiType::ValueType("GameState".to_owned()),
+                        }],
+                        return_type: Some(FfiType::ValueType("GameState".to_owned())),
+                        docs: vec![],
+                        borsh_return: true,
+                        borsh_params: vec!["new_state".to_owned()],
                     },
                     FfiFunction {
                         rust_name: "free".to_owned(),
@@ -514,7 +540,17 @@ mod tests {
                 ],
                 docs: vec![],
             }],
-            value_types: vec![],
+            value_types: vec![FfiValueType {
+                name: "GameState".to_owned(),
+                fields: vec![FfiField {
+                    name: "score".to_owned(),
+                    ty: FfiType::Uint(32),
+                }],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
         }
     }
 
@@ -550,6 +586,15 @@ mod tests {
             output.contains("newDir"),
             "output should contain camelCase param name 'newDir'"
         );
+    }
+
+    #[test]
+    fn borsh_param_names_are_camel_case() {
+        let output = generate(&make_module_with_snake_case_fn());
+        assert!(output.contains("newStatePtr"), "borsh ptr var should be camelCase");
+        assert!(output.contains("newStateLen"), "borsh len var should be camelCase");
+        assert!(!output.contains("new_state_ptr"), "borsh ptr var should not be snake_case");
+        assert!(output.contains("\ngetState "), "borsh function name should be camelCase");
     }
 
     #[test]
