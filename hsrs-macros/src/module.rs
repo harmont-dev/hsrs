@@ -45,6 +45,7 @@ impl Parse for ModuleAttr {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     let module_attr: ModuleAttr = syn::parse2(attr)?;
     let mut value_type_names = module_attr.value_type_names;
