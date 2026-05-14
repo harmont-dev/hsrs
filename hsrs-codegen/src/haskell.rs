@@ -453,7 +453,7 @@ fn unwrap_param(name: &str, ty: &FfiType) -> String {
 mod tests {
     use super::*;
     use crate::ir::{
-        FfiEnum, FfiField, FfiFunction, FfiFunctionKind, FfiModule, FfiParam, FfiType,
+        FfiEnum, FfiField, FfiFunction, FfiFunctionKind, FfiModule, FfiParam, FfiSafety, FfiType,
         FfiValueType, ParsedFile,
     };
 
@@ -475,6 +475,7 @@ mod tests {
                         rust_name: "new".to_owned(),
                         c_name: "my_engine_new".to_owned(),
                         kind: FfiFunctionKind::Constructor,
+                        safety: FfiSafety::Safe,
                         params: vec![],
                         return_type: None,
                         docs: vec![],
@@ -485,6 +486,7 @@ mod tests {
                         rust_name: "get_state".to_owned(),
                         c_name: "my_engine_get_state".to_owned(),
                         kind: FfiFunctionKind::RefMethod,
+                        safety: FfiSafety::Safe,
                         params: vec![],
                         return_type: Some(FfiType::ValueType("GameState".to_owned())),
                         docs: vec![],
@@ -495,6 +497,7 @@ mod tests {
                         rust_name: "set_state".to_owned(),
                         c_name: "my_engine_set_state".to_owned(),
                         kind: FfiFunctionKind::MutMethod,
+                        safety: FfiSafety::Safe,
                         params: vec![FfiParam {
                             name: "new_state".to_owned(),
                             ty: FfiType::ValueType("GameState".to_owned()),
@@ -508,6 +511,7 @@ mod tests {
                         rust_name: "free".to_owned(),
                         c_name: "my_engine_free".to_owned(),
                         kind: FfiFunctionKind::Destructor,
+                        safety: FfiSafety::Safe,
                         params: vec![],
                         return_type: None,
                         docs: vec![],
@@ -518,6 +522,7 @@ mod tests {
                         rust_name: "get_value".to_owned(),
                         c_name: "my_engine_get_value".to_owned(),
                         kind: FfiFunctionKind::RefMethod,
+                        safety: FfiSafety::Safe,
                         params: vec![],
                         return_type: Some(FfiType::Int(64)),
                         docs: vec![],
@@ -528,6 +533,7 @@ mod tests {
                         rust_name: "set_direction".to_owned(),
                         c_name: "my_engine_set_direction".to_owned(),
                         kind: FfiFunctionKind::MutMethod,
+                        safety: FfiSafety::Safe,
                         params: vec![FfiParam {
                             name: "new_dir".to_owned(),
                             ty: FfiType::Enum("Direction".to_owned()),

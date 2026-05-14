@@ -53,6 +53,7 @@ pub enum FfiFunctionKind {
     Destructor,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum FfiSafety {
     Safe,
     Unsafe,

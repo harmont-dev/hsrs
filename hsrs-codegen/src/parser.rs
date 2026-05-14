@@ -1,6 +1,6 @@
 use crate::ir::{
-    FfiEnum, FfiField, FfiFunction, FfiFunctionKind, FfiModule, FfiParam, FfiType, FfiValueType,
-    ParsedFile,
+    FfiEnum, FfiField, FfiFunction, FfiFunctionKind, FfiModule, FfiParam, FfiSafety, FfiType,
+    FfiValueType, ParsedFile,
 };
 use std::path::Path;
 use syn::{Fields, FnArg, ImplItem, Item, Pat, ReturnType, Type};
@@ -149,12 +149,96 @@ fn parse_value_type(
     })
 }
 
+fn extract_function_safety(attrs: &[syn::Attribute]) -> Option<FfiSafety> {
+    for attr in attrs {
+        let segs: Vec<_> = attr
+            .path()
+            .segments
+            .iter()
+            .map(|s| s.ident.to_string())
+            .collect();
+        if segs == vec!["hsrs", "function"] {
+            if let syn::Meta::List(list) = &attr.meta {
+                let token_str = list.tokens.to_string();
+                let trimmed = token_str.trim();
+                return match trimmed {
+                    "safe" => Some(FfiSafety::Safe),
+                    "unsafe" => Some(FfiSafety::Unsafe),
+                    "interruptible" => Some(FfiSafety::Interruptible),
+                    _ => None,
+                };
+            }
+            // Bare #[hsrs::function] — no safety specified
+            return None;
+        }
+    }
+    None
+}
+
+fn extract_module_safety(attrs: &[syn::Attribute]) -> FfiSafety {
+    for attr in attrs {
+        let segs: Vec<_> = attr
+            .path()
+            .segments
+            .iter()
+            .map(|s| s.ident.to_string())
+            .collect();
+        if segs == vec!["hsrs", "module"] {
+            if let syn::Meta::List(list) = &attr.meta {
+                let token_str = list.tokens.to_string();
+                // Look for `safety = <ident>` pattern in the token string.
+                // We need to be careful because the string may also contain
+                // things like `value_types(Foo, Bar)`.
+                let mut tokens_iter = token_str.split_whitespace().peekable();
+                while let Some(tok) = tokens_iter.next() {
+                    // Handle tokens that may be glued together like "safety="
+                    // or separated by whitespace like "safety = unsafe"
+                    if tok == "safety" {
+                        // Next should be "="
+                        if let Some(&eq) = tokens_iter.peek() {
+                            if eq.starts_with('=') {
+                                tokens_iter.next(); // consume "="
+                                // The value might be glued to "=" like "=unsafe"
+                                let val = if eq.len() > 1 {
+                                    eq[1..].trim_end_matches(',').to_string()
+                                } else if let Some(v) = tokens_iter.next() {
+                                    v.trim_end_matches(',').to_string()
+                                } else {
+                                    continue;
+                                };
+                                return match val.as_str() {
+                                    "safe" => FfiSafety::Safe,
+                                    "unsafe" => FfiSafety::Unsafe,
+                                    "interruptible" => FfiSafety::Interruptible,
+                                    _ => FfiSafety::Safe,
+                                };
+                            }
+                        }
+                    } else if tok.starts_with("safety") && tok.contains('=') {
+                        // Handle "safety=unsafe" or "safety=unsafe,"
+                        let after_eq = tok.split('=').nth(1).unwrap_or("");
+                        let val = after_eq.trim_end_matches(',');
+                        return match val {
+                            "safe" => FfiSafety::Safe,
+                            "unsafe" => FfiSafety::Unsafe,
+                            "interruptible" => FfiSafety::Interruptible,
+                            _ => FfiSafety::Safe,
+                        };
+                    }
+                }
+            }
+        }
+    }
+    FfiSafety::Safe
+}
+
 fn parse_module(
     m: &syn::ItemMod,
     known_enums: &[FfiEnum],
     known_value_types: &[FfiValueType],
 ) -> Result<FfiModule, String> {
     let mod_name = m.ident.to_string();
+    let default_safety = extract_module_safety(&m.attrs);
     let content = m
         .content
         .as_ref()
@@ -194,7 +278,7 @@ fn parse_module(
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
             if has_hsrs_attr(&method.attrs, "function") {
-                functions.push(parse_function(method, &mod_name, known_enums, known_value_types)?);
+                functions.push(parse_function(method, &mod_name, &default_safety, known_enums, known_value_types)?);
             }
         }
     }
@@ -203,6 +287,7 @@ fn parse_module(
         rust_name: "free".to_owned(),
         c_name: format!("{mod_name}_free"),
         kind: FfiFunctionKind::Destructor,
+        safety: FfiSafety::Safe,
         params: vec![],
         return_type: None,
         docs: vec![],
@@ -228,11 +313,13 @@ fn is_borsh_type(ty: &FfiType) -> bool {
 fn parse_function(
     method: &syn::ImplItemFn,
     mod_name: &str,
+    default_safety: &FfiSafety,
     known_enums: &[FfiEnum],
     known_value_types: &[FfiValueType],
 ) -> Result<FfiFunction, String> {
     let name = method.sig.ident.to_string();
     let c_name = format!("{mod_name}_{name}");
+    let safety = extract_function_safety(&method.attrs).unwrap_or_else(|| default_safety.clone());
 
     let kind = match method.sig.inputs.first() {
         Some(FnArg::Receiver(r)) if r.mutability.is_some() => FfiFunctionKind::MutMethod,
@@ -278,6 +365,7 @@ fn parse_function(
         rust_name: name,
         c_name,
         kind,
+        safety,
         params,
         return_type,
         docs: extract_docs(&method.attrs),
@@ -362,5 +450,136 @@ fn resolve_type(
         }
         Type::Tuple(tt) if tt.elems.is_empty() => Ok(FfiType::Unit),
         _ => Err("unsupported type syntax".to_owned()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::FfiSafety;
+
+    fn parse_source(src: &str) -> ParsedFile {
+        let file = syn::parse_file(src).unwrap();
+        let mut enums = Vec::new();
+        let mut modules = Vec::new();
+        let mut value_types = Vec::new();
+        for item in &file.items {
+            match item {
+                Item::Enum(e) if has_hsrs_attr(&e.attrs, "enumeration") => {
+                    enums.push(parse_enum(e).unwrap());
+                }
+                Item::Struct(s) if has_hsrs_attr(&s.attrs, "value_type") => {
+                    value_types.push(parse_value_type(s, &enums, &value_types).unwrap());
+                }
+                Item::Mod(m) if has_hsrs_attr(&m.attrs, "module") => {
+                    modules.push(parse_module(m, &enums, &value_types).unwrap());
+                }
+                _ => {}
+            }
+        }
+        ParsedFile {
+            enums,
+            modules,
+            value_types,
+        }
+    }
+
+    #[test]
+    fn function_default_safety_is_safe() {
+        let src = r#"
+            #[hsrs::module]
+            mod example {
+                #[hsrs::data_type]
+                pub struct Example { val: i32 }
+                impl Example {
+                    #[hsrs::function]
+                    pub fn get(&self) -> i32 { self.val }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let func = &parsed.modules[0].functions[0];
+        assert_eq!(func.safety, FfiSafety::Safe);
+    }
+
+    #[test]
+    fn function_explicit_unsafe() {
+        let src = r#"
+            #[hsrs::module]
+            mod example {
+                #[hsrs::data_type]
+                pub struct Example { val: i32 }
+                impl Example {
+                    #[hsrs::function(unsafe)]
+                    pub fn get(&self) -> i32 { self.val }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let func = &parsed.modules[0].functions[0];
+        assert_eq!(func.safety, FfiSafety::Unsafe);
+    }
+
+    #[test]
+    fn function_explicit_interruptible() {
+        let src = r#"
+            #[hsrs::module]
+            mod example {
+                #[hsrs::data_type]
+                pub struct Example { val: i32 }
+                impl Example {
+                    #[hsrs::function(interruptible)]
+                    pub fn get(&self) -> i32 { self.val }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let func = &parsed.modules[0].functions[0];
+        assert_eq!(func.safety, FfiSafety::Interruptible);
+    }
+
+    #[test]
+    fn module_level_safety_default() {
+        let src = r#"
+            #[hsrs::module(safety = unsafe)]
+            mod example {
+                #[hsrs::data_type]
+                pub struct Example { val: i32 }
+                impl Example {
+                    #[hsrs::function]
+                    pub fn get(&self) -> i32 { self.val }
+
+                    #[hsrs::function(safe)]
+                    pub fn get_safe(&self) -> i32 { self.val }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let funcs = &parsed.modules[0].functions;
+        // Bare #[hsrs::function] inherits module-level unsafe
+        assert_eq!(funcs[0].safety, FfiSafety::Unsafe);
+        // #[hsrs::function(safe)] overrides to Safe
+        assert_eq!(funcs[1].safety, FfiSafety::Safe);
+    }
+
+    #[test]
+    fn module_level_safety_with_value_types() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Foo { pub x: i32 }
+
+            #[hsrs::module(value_types(Foo), safety = unsafe)]
+            mod example {
+                #[hsrs::data_type]
+                pub struct Example { val: i32 }
+                impl Example {
+                    #[hsrs::function]
+                    pub fn get(&self) -> i32 { self.val }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let func = &parsed.modules[0].functions[0];
+        assert_eq!(func.safety, FfiSafety::Unsafe);
     }
 }
