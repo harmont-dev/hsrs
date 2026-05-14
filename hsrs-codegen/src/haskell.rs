@@ -445,7 +445,7 @@ fn ffi_type(ty: &FfiType) -> String {
         FfiType::Unit => "()".to_owned(),
         FfiType::ValueType(name) => name.clone(),
         FfiType::Result(_, _) | FfiType::Option(_) => "()".to_owned(),
-        _ => "()".to_owned(),
+        FfiType::Int(w) | FfiType::Uint(w) => unreachable!("unsupported bit width: {w}"),
     }
 }
 

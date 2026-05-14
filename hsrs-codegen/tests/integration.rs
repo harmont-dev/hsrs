@@ -4,6 +4,7 @@
     clippy::nursery,
     clippy::cargo,
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::missing_docs_in_private_items,
     clippy::exhaustive_enums,
     clippy::exhaustive_structs,

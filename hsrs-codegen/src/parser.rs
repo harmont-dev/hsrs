@@ -8,33 +8,7 @@ use syn::{Fields, FnArg, ImplItem, Item, Pat, ReturnType, Type};
 pub fn parse_file(path: &Path) -> Result<ParsedFile, String> {
     let source = std::fs::read_to_string(path)
         .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
-    let file = syn::parse_file(&source)
-        .map_err(|e| format!("failed to parse {}: {e}", path.display()))?;
-
-    let mut enums = Vec::new();
-    let mut modules = Vec::new();
-    let mut value_types = Vec::new();
-
-    for item in &file.items {
-        match item {
-            Item::Enum(e) if has_hsrs_attr(&e.attrs, "enumeration") => {
-                enums.push(parse_enum(e)?);
-            }
-            Item::Struct(s) if has_hsrs_attr(&s.attrs, "value_type") => {
-                value_types.push(parse_value_type(s, &enums, &value_types)?);
-            }
-            Item::Mod(m) if has_hsrs_attr(&m.attrs, "module") => {
-                modules.push(parse_module(m, &enums, &value_types)?);
-            }
-            _ => {}
-        }
-    }
-
-    Ok(ParsedFile {
-        enums,
-        modules,
-        value_types,
-    })
+    parse_str(&source)
 }
 
 pub fn parse_str(source: &str) -> Result<ParsedFile, String> {
@@ -485,29 +459,7 @@ mod tests {
     use crate::ir::FfiSafety;
 
     fn parse_source(src: &str) -> ParsedFile {
-        let file = syn::parse_file(src).unwrap();
-        let mut enums = Vec::new();
-        let mut modules = Vec::new();
-        let mut value_types = Vec::new();
-        for item in &file.items {
-            match item {
-                Item::Enum(e) if has_hsrs_attr(&e.attrs, "enumeration") => {
-                    enums.push(parse_enum(e).unwrap());
-                }
-                Item::Struct(s) if has_hsrs_attr(&s.attrs, "value_type") => {
-                    value_types.push(parse_value_type(s, &enums, &value_types).unwrap());
-                }
-                Item::Mod(m) if has_hsrs_attr(&m.attrs, "module") => {
-                    modules.push(parse_module(m, &enums, &value_types).unwrap());
-                }
-                _ => {}
-            }
-        }
-        ParsedFile {
-            enums,
-            modules,
-            value_types,
-        }
+        parse_str(src).unwrap()
     }
 
     #[test]
