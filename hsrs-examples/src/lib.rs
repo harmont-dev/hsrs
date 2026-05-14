@@ -17,6 +17,8 @@
     clippy::needless_return,
 )]
 
+mod edge_cases;
+
 /// CPU register identifiers.
 #[derive(Debug, PartialEq, Eq)]
 #[hsrs::enumeration]
