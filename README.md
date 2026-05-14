@@ -128,7 +128,7 @@ nonzero (QuectoVm fp) r = withForeignPtr fp $ \ptr ->
 
 ## Usage
 
-Add `hsrs`, `safer-ffi`, and `borsh` to your crate:
+Add `hsrs` and `safer-ffi` to your crate:
 
 ```toml
 [lib]
@@ -137,7 +137,6 @@ crate-type = ["lib", "staticlib"]
 [dependencies]
 hsrs = { git = "https://github.com/harmont-dev/hsrs" }
 safer-ffi = { version = "0.2.0-rc1", features = ["alloc"] }
-borsh = { version = "1", features = ["derive"] }
 ```
 
 Annotate your types, then generate bindings:

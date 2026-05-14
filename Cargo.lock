@@ -161,6 +161,7 @@ name = "hsrs-examples"
 version = "0.1.0"
 dependencies = [
  "hsrs",
+ "safer-ffi",
 ]
 
 [[package]]
