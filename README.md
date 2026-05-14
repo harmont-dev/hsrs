@@ -2,7 +2,7 @@
 
 Type-safe Haskell FFI bindings from annotated Rust.
 
-`hsrs` proc macros generate C FFI exports via [safer-ffi](https://github.com/getditto/safer_ffi).
+`hsrs` generates C FFI exports via [safer-ffi](https://github.com/getditto/safer_ffi).
 `hsrs-codegen` reads the annotated Rust source and emits idiomatic Haskell with newtypes,
 `ForeignPtr` management, and pattern synonyms — preserving the type safety that the C layer erases.
 
@@ -73,8 +73,6 @@ add (QuectoVm fp) a b =
     c_quectoVmAdd ptr (let (Register a') = a in a') (let (Register b') = b in b')
 ```
 
-Full output: [`hsrs-examples/Bindings.hs`](hsrs-examples/Bindings.hs)
-
 ## Usage
 
 Add `hsrs` and `safer-ffi` to your crate:
@@ -84,7 +82,7 @@ Add `hsrs` and `safer-ffi` to your crate:
 crate-type = ["lib", "staticlib"]
 
 [dependencies]
-hsrs = { git = "..." }
+hsrs = { git = "https://github.com/harmont-dev/hsrs" }
 safer-ffi = { version = "0.2.0-rc1", features = ["alloc"] }
 ```
 
@@ -93,49 +91,6 @@ Annotate your types, then generate bindings:
 ```sh
 cargo run -p hsrs-codegen -- path/to/lib.rs -o Bindings.hs
 ```
-
-## Attributes
-
-| Attribute | Target | Effect |
-|-----------|--------|--------|
-| `#[hsrs::enumeration]` | `enum` (unit variants only) | Adds `#[derive_ReprC]`, `#[repr(u8)]` |
-| `#[hsrs::module]` | `mod` block | Processes the module; generates FFI wrappers + destructor |
-| `#[hsrs::data_type]` | `struct` (inside module) | Adds `#[derive_ReprC]`, `#[repr(opaque)]` |
-| `#[hsrs::function]` | `fn` (inside module impl) | Generates `#[ffi_export]` wrapper |
-
-## Type Mapping
-
-| Rust | C (safer-ffi) | Haskell FFI | Haskell API |
-|------|---------------|-------------|-------------|
-| `i8`..`i64` | `int8_t`..`int64_t` | `Int8`..`Int64` | `Int8`..`Int64` |
-| `u8`..`u64` | `uint8_t`..`uint64_t` | `Word8`..`Word64` | `Word8`..`Word64` |
-| `bool` | `bool` | `CBool` | `CBool` |
-| `#[enumeration]` enum | `uint8_t` | `Word8` | newtype (e.g. `Register`) |
-| `#[data_type]` struct | opaque ptr | `Ptr Raw` | newtype over `ForeignPtr` |
-
-## Haskell Derives
-
-Haskell `deriving` clauses mirror the Rust source:
-
-| Rust `#[derive(...)]` | Haskell `deriving (...)` |
-|------------------------|--------------------------|
-| `PartialEq` / `Eq` | `Eq` |
-| `Debug` | `Show` |
-| `PartialOrd` / `Ord` | `Ord` |
-| *(always)* | `Storable` |
-
-## Workspace
-
-| Crate | Role |
-|-------|------|
-| `hsrs` | Proc-macro — attribute macros for FFI generation |
-| `hsrs-codegen` | Binary — parses Rust source, emits Haskell |
-| `hsrs-examples` | Example — demo crate with generated bindings |
-
-## Requirements
-
-- Rust 1.85+ (edition 2024)
-- `safer-ffi` 0.2.0-rc1
 
 ## License
 

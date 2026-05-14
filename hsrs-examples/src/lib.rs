@@ -17,6 +17,7 @@
     clippy::needless_return,
 )]
 
+/// CPU register identifiers.
 #[derive(Debug, PartialEq, Eq)]
 #[hsrs::enumeration]
 pub enum Register {
@@ -25,6 +26,7 @@ pub enum Register {
     Count,
 }
 
+/// A minimal virtual machine with two registers.
 #[hsrs::module]
 mod quecto_vm {
     #[hsrs::data_type]
@@ -34,6 +36,7 @@ mod quecto_vm {
     }
 
     impl QuectoVm {
+        /// Creates a new VM with zeroed registers.
         #[hsrs::function]
         pub fn new() -> Self {
             return {
@@ -44,36 +47,42 @@ mod quecto_vm {
             }
         }
 
+        /// Adds register `b` into register `a`.
         #[hsrs::function]
         pub fn add(&mut self, a: Register, b: Register) {
             *self.reg_mut(a) = self.reg(a) + self.reg(b);
             self.clock += 1;
         }
 
+        /// Subtracts register `b` from register `a`.
         #[hsrs::function]
         pub fn sub(&mut self, a: Register, b: Register) {
             *self.reg_mut(a) = self.reg(a) - self.reg(b);
             self.clock += 1;
         }
 
+        /// Multiplies register `a` by register `b`.
         #[hsrs::function]
         pub fn mul(&mut self, a: Register, b: Register) {
             *self.reg_mut(a) = self.reg(a) * self.reg(b);
             self.clock += 1;
         }
 
+        /// Divides register `a` by register `b`.
         #[hsrs::function]
         pub fn div(&mut self, a: Register, b: Register) {
             *self.reg_mut(a) = self.reg(a) / self.reg(b);
             self.clock += 1;
         }
 
+        /// Reads the value in register `r`.
         #[hsrs::function]
         pub fn load(&mut self, r: Register) -> i64 {
             self.clock += 1;
             self.reg(r)
         }
 
+        /// Writes `v` into register `r`.
         #[hsrs::function]
         pub fn store(&mut self, r: Register, v: i64) {
             self.clock += 1;

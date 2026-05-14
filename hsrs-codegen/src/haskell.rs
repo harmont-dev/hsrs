@@ -21,6 +21,16 @@ pub fn generate(parsed: &ParsedFile) -> String {
     out
 }
 
+fn emit_haddock(out: &mut String, docs: &[String]) {
+    for (i, line) in docs.iter().enumerate() {
+        if i == 0 {
+            out.push_str(&format!("-- |{}\n", line));
+        } else {
+            out.push_str(&format!("--{}\n", line));
+        }
+    }
+}
+
 fn generate_enum(out: &mut String, e: &FfiEnum) {
     let mut derives = Vec::new();
     if e.has_eq {
@@ -34,6 +44,7 @@ fn generate_enum(out: &mut String, e: &FfiEnum) {
     }
     derives.push("Storable");
 
+    emit_haddock(out, &e.docs);
     out.push_str(&format!(
         "newtype {} = {} Word8\n  deriving ({})\n\n",
         e.name,
@@ -49,6 +60,7 @@ fn generate_enum(out: &mut String, e: &FfiEnum) {
 fn generate_module(out: &mut String, m: &FfiModule) {
     let raw = format!("{}Raw", m.struct_name);
 
+    emit_haddock(out, &m.docs);
     out.push_str(&format!("data {raw}\n\n"));
     out.push_str(&format!(
         "newtype {} = {} (ForeignPtr {raw})\n\n",
@@ -117,8 +129,10 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
                 .iter()
                 .map(|p| format!("{} -> ", hl_type(&p.ty)))
                 .collect::<String>();
+            out.push('\n');
+            emit_haddock(out, &f.docs);
             out.push_str(&format!(
-                "\n{} :: {}IO {}\n",
+                "{} :: {}IO {}\n",
                 f.rust_name, sig_params, struct_name
             ));
 
@@ -157,8 +171,10 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
                 Some(ty) => format!("IO {}", hl_type(ty)),
                 None => "IO ()".to_owned(),
             };
+            out.push('\n');
+            emit_haddock(out, &f.docs);
             out.push_str(&format!(
-                "\n{} :: {} -> {}{}\n",
+                "{} :: {} -> {}{}\n",
                 f.rust_name, struct_name, sig_params, ret
             ));
 

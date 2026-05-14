@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["hsrs", "hsrs-codegen", "hsrs-examples"]
+members = ["hsrs", "hsrs-macros", "hsrs-codegen", "hsrs-examples"]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

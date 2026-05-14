@@ -99,9 +99,8 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 name = "hsrs"
 version = "0.1.0"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
+ "hsrs-macros",
+ "safer-ffi",
 ]
 
 [[package]]
@@ -119,6 +118,15 @@ version = "0.1.0"
 dependencies = [
  "hsrs",
  "safer-ffi",
+]
+
+[[package]]
+name = "hsrs-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

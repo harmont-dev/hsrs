@@ -9,12 +9,14 @@ pub struct FfiEnum {
     pub has_eq: bool,
     pub has_show: bool,
     pub has_ord: bool,
+    pub docs: Vec<String>,
 }
 
 pub struct FfiModule {
     pub name: String,
     pub struct_name: String,
     pub functions: Vec<FfiFunction>,
+    pub docs: Vec<String>,
 }
 
 pub struct FfiFunction {
@@ -23,6 +25,7 @@ pub struct FfiFunction {
     pub kind: FfiFunctionKind,
     pub params: Vec<FfiParam>,
     pub return_type: Option<FfiType>,
+    pub docs: Vec<String>,
 }
 
 pub enum FfiFunctionKind {

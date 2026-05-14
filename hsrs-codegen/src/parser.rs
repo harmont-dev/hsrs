@@ -40,6 +40,24 @@ fn has_hsrs_attr(attrs: &[syn::Attribute], name: &str) -> bool {
     })
 }
 
+fn extract_docs(attrs: &[syn::Attribute]) -> Vec<String> {
+    attrs
+        .iter()
+        .filter_map(|attr| {
+            if attr.path().is_ident("doc") {
+                if let syn::Meta::NameValue(nv) = &attr.meta {
+                    if let syn::Expr::Lit(lit) = &nv.value {
+                        if let syn::Lit::Str(s) = &lit.lit {
+                            return Some(s.value());
+                        }
+                    }
+                }
+            }
+            None
+        })
+        .collect()
+}
+
 fn extract_derives(attrs: &[syn::Attribute]) -> (bool, bool, bool) {
     let mut has_eq = false;
     let mut has_show = false;
@@ -82,6 +100,7 @@ fn parse_enum(e: &syn::ItemEnum) -> Result<FfiEnum, String> {
         has_eq,
         has_show,
         has_ord,
+        docs: extract_docs(&e.attrs),
     })
 }
 
@@ -137,12 +156,14 @@ fn parse_module(m: &syn::ItemMod, known_enums: &[FfiEnum]) -> Result<FfiModule, 
         kind: FfiFunctionKind::Destructor,
         params: vec![],
         return_type: None,
+        docs: vec![],
     });
 
     Ok(FfiModule {
         name: mod_name,
         struct_name,
         functions,
+        docs: extract_docs(&m.attrs),
     })
 }
 
@@ -193,6 +214,7 @@ fn parse_function(
         kind,
         params,
         return_type,
+        docs: extract_docs(&method.attrs),
     })
 }
 

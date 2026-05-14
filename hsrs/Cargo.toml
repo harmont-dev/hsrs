@@ -3,13 +3,9 @@ name = "hsrs"
 version = "0.1.0"
 edition = "2024"
 
-[lib]
-proc-macro = true
-
 [dependencies]
-syn = { version = "2", features = ["full"] }
-quote = "1"
-proc-macro2 = "1"
+hsrs-macros = { path = "../hsrs-macros" }
+safer-ffi = { version = "0.2.0-rc1", features = ["alloc"] }
 
 [lints]
 workspace = true
