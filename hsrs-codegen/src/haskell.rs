@@ -446,3 +446,120 @@ fn unwrap_param(name: &str, ty: &FfiType) -> String {
         _ => name.to_owned(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{FfiEnum, FfiFunction, FfiFunctionKind, FfiModule, FfiParam, FfiType, ParsedFile};
+
+    fn make_module_with_snake_case_fn() -> ParsedFile {
+        ParsedFile {
+            enums: vec![FfiEnum {
+                name: "Direction".to_owned(),
+                variants: vec!["North".to_owned(), "South".to_owned()],
+                has_eq: true,
+                has_show: true,
+                has_ord: false,
+                docs: vec![],
+            }],
+            modules: vec![FfiModule {
+                name: "my_engine".to_owned(),
+                struct_name: "MyEngine".to_owned(),
+                functions: vec![
+                    FfiFunction {
+                        rust_name: "new".to_owned(),
+                        c_name: "my_engine_new".to_owned(),
+                        kind: FfiFunctionKind::Constructor,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "free".to_owned(),
+                        c_name: "my_engine_free".to_owned(),
+                        kind: FfiFunctionKind::Destructor,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "get_value".to_owned(),
+                        c_name: "my_engine_get_value".to_owned(),
+                        kind: FfiFunctionKind::RefMethod,
+                        params: vec![],
+                        return_type: Some(FfiType::Int(64)),
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "set_direction".to_owned(),
+                        c_name: "my_engine_set_direction".to_owned(),
+                        kind: FfiFunctionKind::MutMethod,
+                        params: vec![FfiParam {
+                            name: "new_dir".to_owned(),
+                            ty: FfiType::Enum("Direction".to_owned()),
+                        }],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                ],
+                docs: vec![],
+            }],
+            value_types: vec![],
+        }
+    }
+
+    #[test]
+    fn function_names_are_camel_case() {
+        let output = generate(&make_module_with_snake_case_fn());
+        assert!(
+            !output.contains("\nget_value "),
+            "output should not contain snake_case function name 'get_value'"
+        );
+        assert!(
+            output.contains("\ngetValue "),
+            "output should contain camelCase function name 'getValue'"
+        );
+        assert!(
+            !output.contains("\nset_direction "),
+            "output should not contain snake_case function name 'set_direction'"
+        );
+        assert!(
+            output.contains("\nsetDirection "),
+            "output should contain camelCase function name 'setDirection'"
+        );
+    }
+
+    #[test]
+    fn param_names_are_camel_case() {
+        let output = generate(&make_module_with_snake_case_fn());
+        assert!(
+            !output.contains("new_dir"),
+            "output should not contain snake_case param name 'new_dir'"
+        );
+        assert!(
+            output.contains("newDir"),
+            "output should contain camelCase param name 'newDir'"
+        );
+    }
+
+    #[test]
+    fn foreign_import_c_symbols_unchanged() {
+        let output = generate(&make_module_with_snake_case_fn());
+        assert!(
+            output.contains("\"my_engine_get_value\""),
+            "C symbol 'my_engine_get_value' should be present in foreign import"
+        );
+        assert!(
+            output.contains("\"my_engine_set_direction\""),
+            "C symbol 'my_engine_set_direction' should be present in foreign import"
+        );
+    }
+}
