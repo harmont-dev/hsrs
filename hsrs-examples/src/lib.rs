@@ -42,7 +42,7 @@ pub struct VmError {
 }
 
 /// A minimal virtual machine with two registers.
-#[hsrs::module(value_types(Point, VmError))]
+#[hsrs::module(value_types(Point, VmError), safety = unsafe)]
 mod quecto_vm {
     #[hsrs::data_type]
     pub struct QuectoVm {
@@ -114,7 +114,7 @@ mod quecto_vm {
         }
 
         /// Divides register `a` by register `b`, returning error on division by zero.
-        #[hsrs::function]
+        #[hsrs::function(safe)]
         pub fn safe_div(&mut self, a: Register, b: Register) -> Result<i64, VmError> {
             self.clock += 1;
             if self.reg(b) == 0 {
@@ -127,7 +127,7 @@ mod quecto_vm {
         }
 
         /// Returns the value if register is non-zero.
-        #[hsrs::function]
+        #[hsrs::function(safe)]
         pub fn nonzero(&self, r: Register) -> Option<i64> {
             let val = self.reg(r);
             if val != 0 { Some(val) } else { None }

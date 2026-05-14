@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
+use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::{FnArg, ImplItem, ImplItemFn, Item, ItemMod, Pat, ReturnType, Type};
 
@@ -12,17 +13,32 @@ struct ModuleAttr {
 impl Parse for ModuleAttr {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let mut value_type_names = HashSet::new();
-        if !input.is_empty() {
+        while !input.is_empty() {
             let ident: Ident = input.parse()?;
-            if ident != "value_types" {
-                return Err(syn::Error::new_spanned(ident, "expected `value_types`"));
+            match ident.to_string().as_str() {
+                "value_types" => {
+                    let content;
+                    syn::parenthesized!(content in input);
+                    let names =
+                        content.parse_terminated(Ident::parse, syn::Token![,])?;
+                    for name in names {
+                        value_type_names.insert(name.to_string());
+                    }
+                }
+                "safety" => {
+                    let _: syn::Token![=] = input.parse()?;
+                    let _safety_value: Ident = input.call(Ident::parse_any)?;
+                    // Consumed and discarded — codegen reads this from source
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        ident,
+                        format!("unknown module attribute: `{other}`"),
+                    ));
+                }
             }
-            let content;
-            syn::parenthesized!(content in input);
-            let names =
-                content.parse_terminated(Ident::parse, syn::Token![,])?;
-            for name in names {
-                value_type_names.insert(name.to_string());
+            if !input.is_empty() {
+                let _: syn::Token![,] = input.parse()?;
             }
         }
         Ok(Self { value_type_names })
