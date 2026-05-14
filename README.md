@@ -116,8 +116,8 @@ snapshot :: QuectoVm -> IO Point
 snapshot (QuectoVm fp) = withForeignPtr fp $ \ptr ->
   fromBorshBuffer =<< c_quectoVmSnapshot ptr
 
-safe_div :: QuectoVm -> Register -> Register -> IO (Either VmError Int64)
-safe_div (QuectoVm fp) a b = withForeignPtr fp $ \ptr ->
+safeDiv :: QuectoVm -> Register -> Register -> IO (Either VmError Int64)
+safeDiv (QuectoVm fp) a b = withForeignPtr fp $ \ptr ->
   fromBorshBuffer =<< c_quectoVmSafeDiv ptr
     (let (Register a') = a in a') (let (Register b') = b in b')
 
@@ -128,7 +128,7 @@ nonzero (QuectoVm fp) r = withForeignPtr fp $ \ptr ->
 
 ## Usage
 
-Add `hsrs` and `safer-ffi` to your crate:
+Add `hsrs` to your crate:
 
 ```toml
 [lib]
@@ -136,7 +136,6 @@ crate-type = ["lib", "staticlib"]
 
 [dependencies]
 hsrs = { git = "https://github.com/harmont-dev/hsrs" }
-safer-ffi = { version = "0.2.0-rc1", features = ["alloc"] }
 ```
 
 Annotate your types, then generate bindings:
