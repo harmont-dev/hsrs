@@ -800,4 +800,201 @@ mod tests {
             "destructor should emit 'ccall \"&symbol\"' without safety keyword. Got:\n{output}"
         );
     }
+
+    #[test]
+    fn enum_generates_newtype_and_patterns() {
+        let parsed = ParsedFile {
+            enums: vec![FfiEnum {
+                name: "Color".to_owned(),
+                variants: vec!["Red".to_owned(), "Green".to_owned(), "Blue".to_owned()],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+            modules: vec![],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("newtype Color = Color Word8"), "enum newtype: {output}");
+        assert!(output.contains("pattern Red :: Color"), "pattern sig: {output}");
+        assert!(output.contains("pattern Red = Color 0"), "pattern val 0: {output}");
+        assert!(output.contains("pattern Green = Color 1"), "pattern val 1: {output}");
+        assert!(output.contains("pattern Blue = Color 2"), "pattern val 2: {output}");
+    }
+
+    #[test]
+    fn enum_derives_eq_show_ord_when_present() {
+        let parsed = ParsedFile {
+            enums: vec![FfiEnum {
+                name: "Priority".to_owned(),
+                variants: vec!["Low".to_owned(), "High".to_owned()],
+                has_eq: true,
+                has_show: true,
+                has_ord: true,
+                docs: vec![],
+            }],
+            modules: vec![],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("deriving (Eq, Show, Ord, Storable)"), "derives: {output}");
+    }
+
+    #[test]
+    fn enum_derives_storable_only_when_no_derives() {
+        let parsed = ParsedFile {
+            enums: vec![FfiEnum {
+                name: "Bare".to_owned(),
+                variants: vec!["A".to_owned()],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+            modules: vec![],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("deriving (Storable)"), "bare derives: {output}");
+    }
+
+    #[test]
+    fn enum_gets_borsh_deriving_when_borsh_context() {
+        let parsed = ParsedFile {
+            enums: vec![FfiEnum {
+                name: "Dir".to_owned(),
+                variants: vec!["Up".to_owned(), "Down".to_owned()],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+            modules: vec![],
+            value_types: vec![FfiValueType {
+                name: "Pos".to_owned(),
+                fields: vec![FfiField {
+                    name: "x".to_owned(),
+                    ty: FfiType::Int(32),
+                }],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+        };
+        let output = generate(&parsed);
+        assert!(
+            output.contains("deriving (BorshSize, ToBorsh, FromBorsh) via Word8"),
+            "borsh enum deriving: {output}"
+        );
+    }
+
+    #[test]
+    fn enum_no_borsh_when_no_borsh_context() {
+        let parsed = ParsedFile {
+            enums: vec![FfiEnum {
+                name: "Dir".to_owned(),
+                variants: vec!["Up".to_owned()],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+            modules: vec![],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(
+            !output.contains("BorshSize"),
+            "no borsh deriving without value types: {output}"
+        );
+    }
+
+    #[test]
+    fn value_type_generates_record() {
+        let parsed = ParsedFile {
+            enums: vec![],
+            modules: vec![],
+            value_types: vec![FfiValueType {
+                name: "Point".to_owned(),
+                fields: vec![
+                    FfiField { name: "x".to_owned(), ty: FfiType::Int(32) },
+                    FfiField { name: "y".to_owned(), ty: FfiType::Int(32) },
+                ],
+                has_eq: true,
+                has_show: true,
+                has_ord: false,
+                docs: vec![],
+            }],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("data Point = Point"), "data decl: {output}");
+        assert!(output.contains("pointX :: Int32"), "field x: {output}");
+        assert!(output.contains("pointY :: Int32"), "field y: {output}");
+        assert!(output.contains("deriving (Generic, Eq, Show)"), "derives: {output}");
+        assert!(
+            output.contains("deriving (BorshSize, ToBorsh, FromBorsh) via AsStruct Point"),
+            "borsh: {output}"
+        );
+    }
+
+    #[test]
+    fn value_type_field_names_use_prefix() {
+        let parsed = ParsedFile {
+            enums: vec![],
+            modules: vec![],
+            value_types: vec![FfiValueType {
+                name: "GameState".to_owned(),
+                fields: vec![
+                    FfiField { name: "player_score".to_owned(), ty: FfiType::Uint(64) },
+                    FfiField { name: "level".to_owned(), ty: FfiType::Uint(32) },
+                ],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("gameStatePlayerScore :: Word64"), "prefixed field: {output}");
+        assert!(output.contains("gameStateLevel :: Word32"), "prefixed field: {output}");
+    }
+
+    #[test]
+    fn haddock_emitted_for_enum() {
+        let parsed = ParsedFile {
+            enums: vec![FfiEnum {
+                name: "Dir".to_owned(),
+                variants: vec!["Up".to_owned()],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![" Direction enum.".to_owned()],
+            }],
+            modules: vec![],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("-- | Direction enum."), "haddock: {output}");
+    }
+
+    #[test]
+    fn haddock_emitted_for_value_type() {
+        let parsed = ParsedFile {
+            enums: vec![],
+            modules: vec![],
+            value_types: vec![FfiValueType {
+                name: "P".to_owned(),
+                fields: vec![FfiField { name: "x".to_owned(), ty: FfiType::Int(32) }],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![" A point.".to_owned(), " With coords.".to_owned()],
+            }],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("-- | A point."), "first doc line: {output}");
+        assert!(output.contains("-- With coords."), "continuation: {output}");
+    }
 }
