@@ -846,4 +846,310 @@ mod tests {
         assert_eq!(parsed.value_types[0].fields.len(), 1);
         assert_eq!(parsed.value_types[1].fields.len(), 2);
     }
+
+    #[test]
+    fn detects_constructor_kind() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn new() -> Self { Self { x: 0 } }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let f = &parsed.modules[0].functions[0];
+        assert_eq!(f.rust_name, "new");
+        assert!(matches!(f.kind, FfiFunctionKind::Constructor));
+    }
+
+    #[test]
+    fn detects_mut_method_kind() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn set(&mut self, v: i32) { self.x = v; }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert!(matches!(parsed.modules[0].functions[0].kind, FfiFunctionKind::MutMethod));
+    }
+
+    #[test]
+    fn detects_ref_method_kind() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn get(&self) -> i32 { self.x }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert!(matches!(parsed.modules[0].functions[0].kind, FfiFunctionKind::RefMethod));
+    }
+
+    #[test]
+    fn generates_correct_c_names() {
+        let src = r#"
+            #[hsrs::module]
+            mod my_engine {
+                #[hsrs::data_type]
+                pub struct MyEngine { x: i32 }
+                impl MyEngine {
+                    #[hsrs::function]
+                    pub fn new() -> Self { Self { x: 0 } }
+                    #[hsrs::function]
+                    pub fn get_value(&self) -> i32 { 0 }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let fns = &parsed.modules[0].functions;
+        assert_eq!(fns[0].c_name, "my_engine_new");
+        assert_eq!(fns[1].c_name, "my_engine_get_value");
+    }
+
+    #[test]
+    fn auto_generates_destructor() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn new() -> Self { Self { x: 0 } }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let fns = &parsed.modules[0].functions;
+        let destructor = fns.iter().find(|f| matches!(f.kind, FfiFunctionKind::Destructor));
+        assert!(destructor.is_some(), "module should auto-generate destructor");
+        let d = destructor.unwrap();
+        assert_eq!(d.c_name, "m_free");
+        assert_eq!(d.rust_name, "free");
+        assert_eq!(d.safety, FfiSafety::Safe);
+    }
+
+    #[test]
+    fn detects_borsh_return_for_value_type() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Pos { pub x: i32 }
+
+            #[hsrs::module(value_types(Pos))]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn pos(&self) -> Pos { Pos { x: 0 } }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert!(parsed.modules[0].functions[0].borsh_return);
+    }
+
+    #[test]
+    fn detects_borsh_return_for_result() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct E { pub code: u32 }
+
+            #[hsrs::module(value_types(E))]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn try_it(&self) -> Result<i64, E> { Ok(0) }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert!(parsed.modules[0].functions[0].borsh_return);
+    }
+
+    #[test]
+    fn detects_borsh_return_for_option() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn maybe(&self) -> Option<i64> { None }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert!(parsed.modules[0].functions[0].borsh_return);
+    }
+
+    #[test]
+    fn primitive_return_is_not_borsh() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn get(&self) -> i64 { 0 }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert!(!parsed.modules[0].functions[0].borsh_return);
+    }
+
+    #[test]
+    fn detects_borsh_params() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Cfg { pub level: u32 }
+
+            #[hsrs::module(value_types(Cfg))]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn configure(&mut self, c: Cfg) { }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let f = &parsed.modules[0].functions[0];
+        assert_eq!(f.borsh_params, vec!["c"]);
+    }
+
+    #[test]
+    fn primitive_params_are_not_borsh() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn set(&mut self, a: i32, b: u64) { }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert!(parsed.modules[0].functions[0].borsh_params.is_empty());
+    }
+
+    #[test]
+    fn parses_function_docs() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    /// Does the thing.
+                    #[hsrs::function]
+                    pub fn do_it(&self) -> i32 { 0 }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let docs = &parsed.modules[0].functions[0].docs;
+        assert_eq!(docs.len(), 1);
+        assert!(docs[0].contains("Does the thing"));
+    }
+
+    #[test]
+    fn parses_module_docs() {
+        let src = r#"
+            /// Engine module.
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn new() -> Self { Self { x: 0 } }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert!(parsed.modules[0].docs[0].contains("Engine module"));
+    }
+
+    #[test]
+    fn skips_non_annotated_functions() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn public_fn(&self) -> i32 { 0 }
+
+                    fn private_helper(&self) -> i32 { 42 }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let fns = &parsed.modules[0].functions;
+        let non_destructor: Vec<_> = fns.iter()
+            .filter(|f| !matches!(f.kind, FfiFunctionKind::Destructor))
+            .collect();
+        assert_eq!(non_destructor.len(), 1);
+        assert_eq!(non_destructor[0].rust_name, "public_fn");
+    }
+
+    #[test]
+    fn void_method_has_no_return_type() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn reset(&mut self) { self.x = 0; }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert!(parsed.modules[0].functions[0].return_type.is_none());
+    }
+
+    #[test]
+    fn parses_module_struct_name() {
+        let src = r#"
+            #[hsrs::module]
+            mod my_engine {
+                #[hsrs::data_type]
+                pub struct GameEngine { x: i32 }
+                impl GameEngine {
+                    #[hsrs::function]
+                    pub fn new() -> Self { Self { x: 0 } }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert_eq!(parsed.modules[0].name, "my_engine");
+        assert_eq!(parsed.modules[0].struct_name, "GameEngine");
+    }
 }
