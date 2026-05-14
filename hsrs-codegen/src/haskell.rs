@@ -1,5 +1,5 @@
 use crate::ir::{
-    FfiEnum, FfiFunction, FfiFunctionKind, FfiModule, FfiType, FfiValueType, ParsedFile,
+    FfiEnum, FfiFunction, FfiFunctionKind, FfiModule, FfiSafety, FfiType, FfiValueType, ParsedFile,
 };
 use heck::{ToLowerCamelCase, ToUpperCamelCase};
 
@@ -184,22 +184,22 @@ fn generate_foreign_import(out: &mut String, f: &FfiFunction, raw: &str) {
         FfiFunctionKind::Constructor if f.borsh_return => {
             let params = ffi_param_types(f);
             out.push_str(&format!(
-                "foreign import ccall \"{}\" c_{} :: {}IO (Ptr BorshBufferRaw)\n",
-                f.c_name, hs, params
+                "foreign import ccall {}\"{}\" c_{} :: {}IO (Ptr BorshBufferRaw)\n",
+                safety_keyword(&f.safety), f.c_name, hs, params
             ));
         }
         FfiFunctionKind::Constructor => {
             let params = ffi_param_types(f);
             out.push_str(&format!(
-                "foreign import ccall \"{}\" c_{} :: {}IO (Ptr {})\n",
-                f.c_name, hs, params, raw
+                "foreign import ccall {}\"{}\" c_{} :: {}IO (Ptr {})\n",
+                safety_keyword(&f.safety), f.c_name, hs, params, raw
             ));
         }
         FfiFunctionKind::MutMethod | FfiFunctionKind::RefMethod if f.borsh_return => {
             let params = ffi_param_types(f);
             out.push_str(&format!(
-                "foreign import ccall \"{}\" c_{} :: Ptr {} -> {}IO (Ptr BorshBufferRaw)\n",
-                f.c_name, hs, raw, params
+                "foreign import ccall {}\"{}\" c_{} :: Ptr {} -> {}IO (Ptr BorshBufferRaw)\n",
+                safety_keyword(&f.safety), f.c_name, hs, raw, params
             ));
         }
         FfiFunctionKind::MutMethod | FfiFunctionKind::RefMethod => {
@@ -209,8 +209,8 @@ fn generate_foreign_import(out: &mut String, f: &FfiFunction, raw: &str) {
                 None => "IO ()".to_owned(),
             };
             out.push_str(&format!(
-                "foreign import ccall \"{}\" c_{} :: Ptr {} -> {}{}\n",
-                f.c_name, hs, raw, params, ret
+                "foreign import ccall {}\"{}\" c_{} :: Ptr {} -> {}{}\n",
+                safety_keyword(&f.safety), f.c_name, hs, raw, params, ret
             ));
         }
     }
@@ -408,6 +408,14 @@ fn build_borsh_call(f: &FfiFunction, c_func: &str, self_arg: Option<&str>) -> St
         );
     }
     result
+}
+
+fn safety_keyword(safety: &FfiSafety) -> &'static str {
+    match safety {
+        FfiSafety::Safe => "safe ",
+        FfiSafety::Unsafe => "unsafe ",
+        FfiSafety::Interruptible => "interruptible ",
+    }
 }
 
 fn ffi_type(ty: &FfiType) -> String {
@@ -613,6 +621,183 @@ mod tests {
         assert!(
             output.contains("\"my_engine_set_direction\""),
             "C symbol 'my_engine_set_direction' should be present in foreign import"
+        );
+    }
+
+    #[test]
+    fn unsafe_function_emits_ccall_unsafe() {
+        let parsed = ParsedFile {
+            enums: vec![],
+            modules: vec![FfiModule {
+                name: "math".to_owned(),
+                struct_name: "Math".to_owned(),
+                functions: vec![
+                    FfiFunction {
+                        rust_name: "add".to_owned(),
+                        c_name: "math_add".to_owned(),
+                        kind: FfiFunctionKind::MutMethod,
+                        safety: FfiSafety::Unsafe,
+                        params: vec![FfiParam {
+                            name: "x".to_owned(),
+                            ty: FfiType::Int(64),
+                        }],
+                        return_type: Some(FfiType::Int(64)),
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "free".to_owned(),
+                        c_name: "math_free".to_owned(),
+                        kind: FfiFunctionKind::Destructor,
+                        safety: FfiSafety::Safe,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                ],
+                docs: vec![],
+            }],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(
+            output.contains("foreign import ccall unsafe \"math_add\""),
+            "unsafe function should emit 'ccall unsafe'. Got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn safe_function_emits_ccall_safe() {
+        let parsed = ParsedFile {
+            enums: vec![],
+            modules: vec![FfiModule {
+                name: "math".to_owned(),
+                struct_name: "Math".to_owned(),
+                functions: vec![
+                    FfiFunction {
+                        rust_name: "compute".to_owned(),
+                        c_name: "math_compute".to_owned(),
+                        kind: FfiFunctionKind::RefMethod,
+                        safety: FfiSafety::Safe,
+                        params: vec![FfiParam {
+                            name: "x".to_owned(),
+                            ty: FfiType::Int(64),
+                        }],
+                        return_type: Some(FfiType::Int(64)),
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "free".to_owned(),
+                        c_name: "math_free".to_owned(),
+                        kind: FfiFunctionKind::Destructor,
+                        safety: FfiSafety::Safe,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                ],
+                docs: vec![],
+            }],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(
+            output.contains("foreign import ccall safe \"math_compute\""),
+            "safe function should emit 'ccall safe'. Got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn interruptible_function_emits_ccall_interruptible() {
+        let parsed = ParsedFile {
+            enums: vec![],
+            modules: vec![FfiModule {
+                name: "io".to_owned(),
+                struct_name: "Io".to_owned(),
+                functions: vec![
+                    FfiFunction {
+                        rust_name: "read".to_owned(),
+                        c_name: "io_read".to_owned(),
+                        kind: FfiFunctionKind::MutMethod,
+                        safety: FfiSafety::Interruptible,
+                        params: vec![FfiParam {
+                            name: "buf".to_owned(),
+                            ty: FfiType::Uint(64),
+                        }],
+                        return_type: Some(FfiType::Int(64)),
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "free".to_owned(),
+                        c_name: "io_free".to_owned(),
+                        kind: FfiFunctionKind::Destructor,
+                        safety: FfiSafety::Safe,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                ],
+                docs: vec![],
+            }],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(
+            output.contains("foreign import ccall interruptible \"io_read\""),
+            "interruptible function should emit 'ccall interruptible'. Got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn destructor_always_safe() {
+        let parsed = ParsedFile {
+            enums: vec![],
+            modules: vec![FfiModule {
+                name: "math".to_owned(),
+                struct_name: "Math".to_owned(),
+                functions: vec![
+                    FfiFunction {
+                        rust_name: "new".to_owned(),
+                        c_name: "math_new".to_owned(),
+                        kind: FfiFunctionKind::Constructor,
+                        safety: FfiSafety::Unsafe,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "free".to_owned(),
+                        c_name: "math_free".to_owned(),
+                        kind: FfiFunctionKind::Destructor,
+                        safety: FfiSafety::Safe,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                ],
+                docs: vec![],
+            }],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(
+            output.contains("foreign import ccall \"&math_free\""),
+            "destructor should emit 'ccall \"&symbol\"' without safety keyword. Got:\n{output}"
         );
     }
 }
