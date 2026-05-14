@@ -6,6 +6,17 @@ Type-safe Haskell FFI bindings from annotated Rust.
 `hsrs-codegen` reads the annotated Rust source and emits idiomatic Haskell with newtypes,
 `ForeignPtr` management, and pattern synonyms — preserving the type safety that the C layer erases.
 
+## Supported types
+
+| Rust | Haskell | Transfer |
+|------|---------|----------|
+| `#[hsrs::data_type]` struct | `ForeignPtr` newtype | Opaque pointer |
+| `#[hsrs::enumeration]` enum | `Word8` newtype + pattern synonyms | `repr(u8)` |
+| `#[hsrs::value_type]` struct | `data` record + borsh deriving | Borsh-serialized bytes |
+| `Result<T, E>` | `Either E T` | Borsh-serialized bytes |
+| `Option<T>` | `Maybe T` | Borsh-serialized bytes |
+| Primitives (`i32`, `u64`, `bool`, ...) | `Int32`, `Word64`, `CBool`, ... | Direct FFI |
+
 ## Example
 
 ### Rust
@@ -19,7 +30,20 @@ pub enum Register {
     Count,
 }
 
-#[hsrs::module]
+#[derive(Debug, PartialEq, Eq)]
+#[hsrs::value_type]
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+#[hsrs::value_type]
+pub struct VmError {
+    pub code: u32,
+}
+
+#[hsrs::module(value_types(Point, VmError))]
 mod quecto_vm {
     #[hsrs::data_type]
     pub struct QuectoVm {
@@ -39,6 +63,15 @@ mod quecto_vm {
 
         #[hsrs::function]
         pub fn store(&mut self, r: Register, v: i64) { /* ... */ }
+
+        #[hsrs::function]
+        pub fn snapshot(&self) -> Point { /* ... */ }
+
+        #[hsrs::function]
+        pub fn safe_div(&mut self, a: Register, b: Register) -> Result<i64, VmError> { /* ... */ }
+
+        #[hsrs::function]
+        pub fn nonzero(&self, r: Register) -> Option<i64> { /* ... */ }
     }
 }
 ```
@@ -48,18 +81,25 @@ mod quecto_vm {
 ```haskell
 newtype Register = Register Word8
   deriving (Eq, Show, Storable)
+  deriving (BorshSize, ToBorsh, FromBorsh) via Word8
 
 pattern Reg0 :: Register
 pattern Reg0 = Register 0
 
+data Point = Point
+  { pointX :: Int32
+  , pointY :: Int32
+  } deriving (Generic, Eq, Show)
+  deriving (BorshSize, ToBorsh, FromBorsh) via AsStruct Point
+
+data VmError = VmError
+  { vmErrorCode :: Word32
+  } deriving (Generic, Eq, Show)
+  deriving (BorshSize, ToBorsh, FromBorsh) via AsStruct VmError
+
 data QuectoVmRaw
 
 newtype QuectoVm = QuectoVm (ForeignPtr QuectoVmRaw)
-
-foreign import ccall "quecto_vm_new"   c_quectoVmNew   :: IO (Ptr QuectoVmRaw)
-foreign import ccall "quecto_vm_add"   c_quectoVmAdd   :: Ptr QuectoVmRaw -> Word8 -> Word8 -> IO ()
-foreign import ccall "quecto_vm_store" c_quectoVmStore :: Ptr QuectoVmRaw -> Word8 -> Int64 -> IO ()
-foreign import ccall "&quecto_vm_free" c_quectoVmFree  :: FinalizerPtr QuectoVmRaw
 
 new :: IO QuectoVm
 new = do
@@ -71,11 +111,29 @@ add :: QuectoVm -> Register -> Register -> IO ()
 add (QuectoVm fp) a b =
   withForeignPtr fp $ \ptr ->
     c_quectoVmAdd ptr (let (Register a') = a in a') (let (Register b') = b in b')
+
+snapshot :: QuectoVm -> IO Point
+snapshot (QuectoVm fp) = withForeignPtr fp $ \ptr ->
+  fromBorshBuffer =<< c_quectoVmSnapshot ptr
+
+safe_div :: QuectoVm -> Register -> Register -> IO (Either VmError Int64)
+safe_div (QuectoVm fp) a b = withForeignPtr fp $ \ptr ->
+  fromBorshBuffer =<< c_quectoVmSafeDiv ptr
+    (let (Register a') = a in a') (let (Register b') = b in b')
+
+nonzero :: QuectoVm -> Register -> IO (Maybe Int64)
+nonzero (QuectoVm fp) r = withForeignPtr fp $ \ptr ->
+  fromBorshBuffer =<< c_quectoVmNonzero ptr (let (Register r') = r in r')
 ```
+
+Value types and `Result`/`Option` are transferred as [borsh](https://borsh.io)-serialized
+bytes through an opaque buffer. Rust's `Result<T, E>` maps directly to Haskell's `Either E T`
+(borsh encodes `Err` as tag 0 / `Ok` as tag 1, matching `Left` / `Right`). `Option<T>` maps
+to `Maybe T` the same way.
 
 ## Usage
 
-Add `hsrs` and `safer-ffi` to your crate:
+Add `hsrs`, `safer-ffi`, and `borsh` to your crate:
 
 ```toml
 [lib]
@@ -84,6 +142,7 @@ crate-type = ["lib", "staticlib"]
 [dependencies]
 hsrs = { git = "https://github.com/harmont-dev/hsrs" }
 safer-ffi = { version = "0.2.0-rc1", features = ["alloc"] }
+borsh = { version = "1", features = ["derive"] }
 ```
 
 Annotate your types, then generate bindings:
@@ -91,6 +150,9 @@ Annotate your types, then generate bindings:
 ```sh
 cargo run -p hsrs-codegen -- path/to/lib.rs -o Bindings.hs
 ```
+
+On the Haskell side, add [`borsh`](https://hackage.haskell.org/package/borsh) to your
+build-depends for value type deserialization.
 
 ## License
 
