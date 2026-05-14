@@ -1,0 +1,14 @@
+[package]
+name = "hsrs-examples"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+hsrs = { path = "../hsrs" }
+safer-ffi = { version = "0.2.0-rc1", features = ["alloc"] }
+
+[lints]
+workspace = true

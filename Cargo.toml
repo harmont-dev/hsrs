@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = ["hsrs", "hsrs-codegen", "hsrs-examples"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_imports = "deny"
+unused_variables = "deny"
+unused_must_use = "deny"
+dead_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+wildcard_imports = "deny"
+str_to_string = "deny"
+clone_on_ref_ptr = "deny"
+exhaustive_enums = "deny"
+exhaustive_structs = "deny"
+missing_docs_in_private_items = "deny"
+unwrap_in_result = "deny"
+indexing_slicing = "deny"
+float_arithmetic = "deny"
+arithmetic_side_effects = "deny"
+shadow_reuse = "deny"
+shadow_same = "deny"
+shadow_unrelated = "deny"

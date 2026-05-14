@@ -1,0 +1,8 @@
+msrv = "1.80.0"
+cognitive-complexity-threshold = 10
+too-many-arguments-threshold = 5
+type-complexity-threshold = 200
+single-char-binding-names-threshold = 1
+too-many-lines-threshold = 50
+large-error-threshold = 128
+trivial-copy-size-limit = 8
