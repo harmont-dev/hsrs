@@ -351,23 +351,33 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
             } else {
                 format!(" {}", pnames.join(" "))
             };
-            let unwrapped = if f.params.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    " {}",
-                    f.params
-                        .iter()
-                        .map(|p| unwrap_param(&p.name.to_lower_camel_case(), &p.ty))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                )
-            };
 
-            out.push_str(&format!(
-                "{} ({} fp){} = withForeignPtr fp $ \\ptr -> c_{} ptr{}\n",
-                hs_fn, struct_name, plist, hs_c, unwrapped
-            ));
+            if f.borsh_params.is_empty() {
+                let unwrapped = if f.params.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        " {}",
+                        f.params
+                            .iter()
+                            .map(|p| unwrap_param(&p.name.to_lower_camel_case(), &p.ty))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                };
+
+                out.push_str(&format!(
+                    "{} ({} fp){} = withForeignPtr fp $ \\ptr -> c_{} ptr{}\n",
+                    hs_fn, struct_name, plist, hs_c, unwrapped
+                ));
+            } else {
+                let call = format!("c_{}", hs_c);
+                let full_call = build_borsh_call(f, &call, Some("ptr"));
+                out.push_str(&format!(
+                    "{} ({} fp){} = withForeignPtr fp $ \\ptr ->\n  {}\n",
+                    hs_fn, struct_name, plist, full_call
+                ));
+            }
         }
         FfiFunctionKind::Destructor => {}
     }
@@ -996,5 +1006,449 @@ mod tests {
         let output = generate(&parsed);
         assert!(output.contains("-- | A point."), "first doc line: {output}");
         assert!(output.contains("-- With coords."), "continuation: {output}");
+    }
+
+    fn make_simple_module(functions: Vec<FfiFunction>) -> ParsedFile {
+        ParsedFile {
+            enums: vec![],
+            modules: vec![FfiModule {
+                name: "engine".to_owned(),
+                struct_name: "Engine".to_owned(),
+                functions,
+                docs: vec![],
+            }],
+            value_types: vec![],
+        }
+    }
+
+    fn destructor() -> FfiFunction {
+        FfiFunction {
+            rust_name: "free".to_owned(),
+            c_name: "engine_free".to_owned(),
+            kind: FfiFunctionKind::Destructor,
+            safety: FfiSafety::Safe,
+            params: vec![],
+            return_type: None,
+            docs: vec![],
+            borsh_return: false,
+            borsh_params: vec![],
+        }
+    }
+
+    #[test]
+    fn module_generates_raw_type_and_newtype() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "new".to_owned(),
+                c_name: "engine_new".to_owned(),
+                kind: FfiFunctionKind::Constructor,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: None,
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("data EngineRaw"), "raw type: {output}");
+        assert!(
+            output.contains("newtype Engine = Engine (ForeignPtr EngineRaw)"),
+            "newtype: {output}"
+        );
+    }
+
+    #[test]
+    fn constructor_no_args_wrapper() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "new".to_owned(),
+                c_name: "engine_new".to_owned(),
+                kind: FfiFunctionKind::Constructor,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: None,
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("new :: IO Engine"), "constructor sig: {output}");
+        assert!(output.contains("new = do"), "constructor body: {output}");
+        assert!(output.contains("ptr <- c_engineNew"), "c call: {output}");
+        assert!(output.contains("newForeignPtr c_engineFree ptr"), "attach finalizer: {output}");
+        assert!(output.contains("pure (Engine fp)"), "wrap: {output}");
+    }
+
+    #[test]
+    fn constructor_with_args_wrapper() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "create".to_owned(),
+                c_name: "engine_create".to_owned(),
+                kind: FfiFunctionKind::Constructor,
+                safety: FfiSafety::Safe,
+                params: vec![
+                    FfiParam { name: "width".to_owned(), ty: FfiType::Int(32) },
+                    FfiParam { name: "height".to_owned(), ty: FfiType::Int(32) },
+                ],
+                return_type: None,
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("create :: Int32 -> Int32 -> IO Engine"), "sig: {output}");
+        assert!(output.contains("create width height = do"), "body: {output}");
+        assert!(output.contains("c_engineCreate width height"), "c call args: {output}");
+    }
+
+    #[test]
+    fn ref_method_with_return() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "get_value".to_owned(),
+                c_name: "engine_get_value".to_owned(),
+                kind: FfiFunctionKind::RefMethod,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: Some(FfiType::Int(64)),
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("getValue :: Engine -> IO Int64"), "sig: {output}");
+        assert!(
+            output.contains("getValue (Engine fp) = withForeignPtr fp"),
+            "body: {output}"
+        );
+    }
+
+    #[test]
+    fn mut_method_void_return() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "reset".to_owned(),
+                c_name: "engine_reset".to_owned(),
+                kind: FfiFunctionKind::MutMethod,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: None,
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("reset :: Engine -> IO ()"), "void sig: {output}");
+    }
+
+    #[test]
+    fn mut_method_with_params_and_return() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "compute".to_owned(),
+                c_name: "engine_compute".to_owned(),
+                kind: FfiFunctionKind::MutMethod,
+                safety: FfiSafety::Safe,
+                params: vec![
+                    FfiParam { name: "a".to_owned(), ty: FfiType::Int(64) },
+                    FfiParam { name: "b".to_owned(), ty: FfiType::Int(64) },
+                ],
+                return_type: Some(FfiType::Int(64)),
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(
+            output.contains("compute :: Engine -> Int64 -> Int64 -> IO Int64"),
+            "sig: {output}"
+        );
+    }
+
+    #[test]
+    fn borsh_return_uses_from_borsh_buffer() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "snapshot".to_owned(),
+                c_name: "engine_snapshot".to_owned(),
+                kind: FfiFunctionKind::RefMethod,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: Some(FfiType::ValueType("State".to_owned())),
+                docs: vec![],
+                borsh_return: true,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("snapshot :: Engine -> IO State"), "sig: {output}");
+        assert!(output.contains("fromBorshBuffer =<<"), "uses fromBorshBuffer: {output}");
+        assert!(output.contains("IO (Ptr BorshBufferRaw)"), "foreign import returns BorshBufferRaw ptr: {output}");
+    }
+
+    #[test]
+    fn borsh_param_uses_serialise_borsh() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "apply".to_owned(),
+                c_name: "engine_apply".to_owned(),
+                kind: FfiFunctionKind::MutMethod,
+                safety: FfiSafety::Safe,
+                params: vec![FfiParam {
+                    name: "config".to_owned(),
+                    ty: FfiType::ValueType("Config".to_owned()),
+                }],
+                return_type: None,
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec!["config".to_owned()],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("serialiseBorsh config"), "serialises borsh param: {output}");
+        assert!(output.contains("configPtr"), "uses ptr var: {output}");
+        assert!(output.contains("configLen"), "uses len var: {output}");
+    }
+
+    #[test]
+    fn result_return_type_becomes_either() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "try_op".to_owned(),
+                c_name: "engine_try_op".to_owned(),
+                kind: FfiFunctionKind::MutMethod,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: Some(FfiType::Result(
+                    Box::new(FfiType::Int(64)),
+                    Box::new(FfiType::ValueType("MyErr".to_owned())),
+                )),
+                docs: vec![],
+                borsh_return: true,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("IO (Either MyErr Int64)"), "Result maps to Either: {output}");
+    }
+
+    #[test]
+    fn option_return_type_becomes_maybe() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "find".to_owned(),
+                c_name: "engine_find".to_owned(),
+                kind: FfiFunctionKind::RefMethod,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: Some(FfiType::Option(Box::new(FfiType::Int(64)))),
+                docs: vec![],
+                borsh_return: true,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("IO (Maybe Int64)"), "Option maps to Maybe: {output}");
+    }
+
+    #[test]
+    fn enum_param_unwrapped_in_call() {
+        let parsed = ParsedFile {
+            enums: vec![FfiEnum {
+                name: "Dir".to_owned(),
+                variants: vec!["Up".to_owned()],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+            modules: vec![FfiModule {
+                name: "nav".to_owned(),
+                struct_name: "Nav".to_owned(),
+                functions: vec![
+                    FfiFunction {
+                        rust_name: "go".to_owned(),
+                        c_name: "nav_go".to_owned(),
+                        kind: FfiFunctionKind::MutMethod,
+                        safety: FfiSafety::Safe,
+                        params: vec![FfiParam {
+                            name: "d".to_owned(),
+                            ty: FfiType::Enum("Dir".to_owned()),
+                        }],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "free".to_owned(),
+                        c_name: "nav_free".to_owned(),
+                        kind: FfiFunctionKind::Destructor,
+                        safety: FfiSafety::Safe,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                ],
+                docs: vec![],
+            }],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("go :: Nav -> Dir -> IO ()"), "sig with enum: {output}");
+        assert!(output.contains("(let (Dir d') = d in d')"), "unwrap enum: {output}");
+    }
+
+    #[test]
+    fn conditional_pragmas_with_value_types() {
+        let parsed = ParsedFile {
+            enums: vec![],
+            modules: vec![],
+            value_types: vec![FfiValueType {
+                name: "V".to_owned(),
+                fields: vec![FfiField { name: "x".to_owned(), ty: FfiType::Int(32) }],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("{-# LANGUAGE DeriveGeneric #-}"), "DeriveGeneric: {output}");
+        assert!(output.contains("{-# LANGUAGE DerivingVia #-}"), "DerivingVia: {output}");
+        assert!(output.contains("import GHC.Generics"), "GHC.Generics: {output}");
+        assert!(output.contains("import Codec.Borsh"), "Codec.Borsh: {output}");
+    }
+
+    #[test]
+    fn no_borsh_imports_when_not_needed() {
+        let parsed = ParsedFile {
+            enums: vec![FfiEnum {
+                name: "X".to_owned(),
+                variants: vec!["A".to_owned()],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+            modules: vec![],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(!output.contains("DeriveGeneric"), "no DeriveGeneric: {output}");
+        assert!(!output.contains("Codec.Borsh"), "no Borsh import: {output}");
+        assert!(!output.contains("Data.ByteString"), "no ByteString: {output}");
+    }
+
+    #[test]
+    fn borsh_imports_when_borsh_functions_exist() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "get".to_owned(),
+                c_name: "engine_get".to_owned(),
+                kind: FfiFunctionKind::RefMethod,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: Some(FfiType::ValueType("S".to_owned())),
+                docs: vec![],
+                borsh_return: true,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("import Codec.Borsh"), "Borsh import: {output}");
+        assert!(output.contains("Data.ByteString"), "ByteString: {output}");
+        assert!(output.contains("BorshBufferRaw"), "BorshBufferRaw type: {output}");
+        assert!(output.contains("fromBorshBuffer"), "utility fn: {output}");
+    }
+
+    #[test]
+    fn haddock_on_functions_and_module() {
+        let parsed = ParsedFile {
+            enums: vec![],
+            modules: vec![FfiModule {
+                name: "e".to_owned(),
+                struct_name: "E".to_owned(),
+                functions: vec![
+                    FfiFunction {
+                        rust_name: "new".to_owned(),
+                        c_name: "e_new".to_owned(),
+                        kind: FfiFunctionKind::Constructor,
+                        safety: FfiSafety::Safe,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![" Create engine.".to_owned()],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                    FfiFunction {
+                        rust_name: "free".to_owned(),
+                        c_name: "e_free".to_owned(),
+                        kind: FfiFunctionKind::Destructor,
+                        safety: FfiSafety::Safe,
+                        params: vec![],
+                        return_type: None,
+                        docs: vec![],
+                        borsh_return: false,
+                        borsh_params: vec![],
+                    },
+                ],
+                docs: vec![" The engine module.".to_owned()],
+            }],
+            value_types: vec![],
+        };
+        let output = generate(&parsed);
+        assert!(output.contains("-- | The engine module."), "module doc: {output}");
+        assert!(output.contains("-- | Create engine."), "fn doc: {output}");
+    }
+
+    #[test]
+    fn all_ffi_types_map_correctly() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "types".to_owned(),
+                c_name: "engine_types".to_owned(),
+                kind: FfiFunctionKind::MutMethod,
+                safety: FfiSafety::Safe,
+                params: vec![
+                    FfiParam { name: "a".to_owned(), ty: FfiType::Int(8) },
+                    FfiParam { name: "b".to_owned(), ty: FfiType::Int(16) },
+                    FfiParam { name: "c".to_owned(), ty: FfiType::Int(32) },
+                    FfiParam { name: "d".to_owned(), ty: FfiType::Int(64) },
+                    FfiParam { name: "e".to_owned(), ty: FfiType::Uint(8) },
+                    FfiParam { name: "f".to_owned(), ty: FfiType::Uint(16) },
+                    FfiParam { name: "g".to_owned(), ty: FfiType::Uint(32) },
+                    FfiParam { name: "h".to_owned(), ty: FfiType::Uint(64) },
+                    FfiParam { name: "i".to_owned(), ty: FfiType::Bool },
+                ],
+                return_type: None,
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("Int8 -> Int16 -> Int32 -> Int64 -> Word8 -> Word16 -> Word32 -> Word64 -> CBool"), "ffi types: {output}");
     }
 }
