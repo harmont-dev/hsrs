@@ -2,8 +2,12 @@
 resolver = "2"
 members = ["hsrs", "hsrs-macros", "hsrs-codegen", "hsrs-examples"]
 
+[workspace.dependencies]
+borsh = { version = "1", features = ["derive"] }
+heck = "0.5"
+
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 unused_imports = "deny"
 unused_variables = "deny"
 unused_must_use = "deny"

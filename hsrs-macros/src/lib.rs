@@ -21,6 +21,7 @@
 
 mod enumeration;
 mod module;
+mod value_type;
 
 #[proc_macro_attribute]
 pub fn enumeration(
@@ -34,10 +35,20 @@ pub fn enumeration(
 
 #[proc_macro_attribute]
 pub fn module(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    module::expand(attr.into(), item.into())
+        .unwrap_or_else(|err| err.to_compile_error())
+        .into()
+}
+
+#[proc_macro_attribute]
+pub fn value_type(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    module::expand(item.into())
+    value_type::expand(item.into())
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }

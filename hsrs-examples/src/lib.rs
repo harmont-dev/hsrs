@@ -26,8 +26,23 @@ pub enum Register {
     Count,
 }
 
+/// A 2D coordinate point.
+#[derive(Debug, PartialEq, Eq)]
+#[hsrs::value_type]
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
+}
+
+/// An error code from the VM.
+#[derive(Debug, PartialEq, Eq)]
+#[hsrs::value_type]
+pub struct VmError {
+    pub code: u32,
+}
+
 /// A minimal virtual machine with two registers.
-#[hsrs::module]
+#[hsrs::module(value_types(Point, VmError))]
 mod quecto_vm {
     #[hsrs::data_type]
     pub struct QuectoVm {
@@ -87,6 +102,35 @@ mod quecto_vm {
         pub fn store(&mut self, r: Register, v: i64) {
             self.clock += 1;
             *self.reg_mut(r) = v;
+        }
+
+        /// Returns registers 0 and 1 as a point.
+        #[hsrs::function]
+        pub fn snapshot(&self) -> Point {
+            Point {
+                x: self.registers[0] as i32,
+                y: self.registers[1] as i32,
+            }
+        }
+
+        /// Divides register `a` by register `b`, returning error on division by zero.
+        #[hsrs::function]
+        pub fn safe_div(&mut self, a: Register, b: Register) -> Result<i64, VmError> {
+            self.clock += 1;
+            if self.reg(b) == 0 {
+                Err(VmError { code: 1 })
+            } else {
+                let result = self.reg(a) / self.reg(b);
+                *self.reg_mut(a) = result;
+                Ok(result)
+            }
+        }
+
+        /// Returns the value if register is non-zero.
+        #[hsrs::function]
+        pub fn nonzero(&self, r: Register) -> Option<i64> {
+            let val = self.reg(r);
+            if val != 0 { Some(val) } else { None }
         }
 
         fn reg_mut(&mut self, r: Register) -> &mut i64 {

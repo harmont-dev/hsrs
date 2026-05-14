@@ -23,7 +23,7 @@ pub(crate) fn expand(item: TokenStream) -> syn::Result<TokenStream> {
         #(#attrs)*
         #[::safer_ffi::derive_ReprC]
         #[repr(u8)]
-        #[derive(Clone, Copy)]
+        #[derive(Clone, Copy, ::hsrs::borsh::BorshSerialize, ::hsrs::borsh::BorshDeserialize)]
         #vis enum #ident {
             #variants
         }

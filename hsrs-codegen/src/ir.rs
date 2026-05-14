@@ -1,6 +1,7 @@
 pub struct ParsedFile {
     pub enums: Vec<FfiEnum>,
     pub modules: Vec<FfiModule>,
+    pub value_types: Vec<FfiValueType>,
 }
 
 pub struct FfiEnum {
@@ -19,6 +20,20 @@ pub struct FfiModule {
     pub docs: Vec<String>,
 }
 
+pub struct FfiValueType {
+    pub name: String,
+    pub fields: Vec<FfiField>,
+    pub has_eq: bool,
+    pub has_show: bool,
+    pub has_ord: bool,
+    pub docs: Vec<String>,
+}
+
+pub struct FfiField {
+    pub name: String,
+    pub ty: FfiType,
+}
+
 pub struct FfiFunction {
     pub rust_name: String,
     pub c_name: String,
@@ -26,6 +41,8 @@ pub struct FfiFunction {
     pub params: Vec<FfiParam>,
     pub return_type: Option<FfiType>,
     pub docs: Vec<String>,
+    pub borsh_return: bool,
+    pub borsh_params: Vec<String>,
 }
 
 pub enum FfiFunctionKind {
@@ -48,4 +65,7 @@ pub enum FfiType {
     Isize,
     Enum(String),
     Unit,
+    ValueType(String),
+    Result(Box<FfiType>, Box<FfiType>),
+    Option(Box<FfiType>),
 }

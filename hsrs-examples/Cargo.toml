@@ -9,6 +9,7 @@ crate-type = ["lib", "staticlib"]
 [dependencies]
 hsrs = { path = "../hsrs" }
 safer-ffi = { version = "0.2.0-rc1", features = ["alloc"] }
+borsh = { workspace = true }
 
 [lints]
 workspace = true
