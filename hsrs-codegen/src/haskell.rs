@@ -232,6 +232,7 @@ fn ffi_param_types(f: &FfiFunction) -> String {
 fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod_name: &str) {
     let hs_c = f.c_name.to_lower_camel_case();
     let free_hs = format!("{mod_name}_free").to_lower_camel_case();
+    let hs_fn = f.rust_name.to_lower_camel_case();
 
     match f.kind {
         FfiFunctionKind::Constructor if f.borsh_return => {
@@ -244,16 +245,16 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
 
             out.push('\n');
             emit_haddock(out, &f.docs);
-            out.push_str(&format!("{} :: {}IO {}\n", f.rust_name, sig_params, ret));
+            out.push_str(&format!("{} :: {}IO {}\n", hs_fn, sig_params, ret));
 
-            let pnames: Vec<_> = f.params.iter().map(|p| p.name.clone()).collect();
+            let pnames: Vec<_> = f.params.iter().map(|p| p.name.to_lower_camel_case()).collect();
             let plist = if pnames.is_empty() {
                 String::new()
             } else {
                 format!(" {}", pnames.join(" "))
             };
 
-            out.push_str(&format!("{}{} =\n", f.rust_name, plist));
+            out.push_str(&format!("{}{} =\n", hs_fn, plist));
             let call = format!("c_{}", hs_c);
             let full_call =
                 build_borsh_call(f, &call, None);
@@ -269,26 +270,26 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
             emit_haddock(out, &f.docs);
             out.push_str(&format!(
                 "{} :: {}IO {}\n",
-                f.rust_name, sig_params, struct_name
+                hs_fn, sig_params, struct_name
             ));
 
-            let pnames: Vec<_> = f.params.iter().map(|p| p.name.clone()).collect();
+            let pnames: Vec<_> = f.params.iter().map(|p| p.name.to_lower_camel_case()).collect();
             let unwrapped = f
                 .params
                 .iter()
-                .map(|p| unwrap_param(&p.name, &p.ty))
+                .map(|p| unwrap_param(&p.name.to_lower_camel_case(), &p.ty))
                 .collect::<Vec<_>>()
                 .join(" ");
 
             if pnames.is_empty() {
                 out.push_str(&format!(
                     "{} = do\n  ptr <- c_{}\n  fp <- newForeignPtr c_{} ptr\n  pure ({} fp)\n",
-                    f.rust_name, hs_c, free_hs, struct_name
+                    hs_fn, hs_c, free_hs, struct_name
                 ));
             } else {
                 out.push_str(&format!(
                     "{} {} = do\n  ptr <- c_{} {}\n  fp <- newForeignPtr c_{} ptr\n  pure ({} fp)\n",
-                    f.rust_name,
+                    hs_fn,
                     pnames.join(" "),
                     hs_c,
                     unwrapped,
@@ -309,10 +310,10 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
             emit_haddock(out, &f.docs);
             out.push_str(&format!(
                 "{} :: {} -> {}IO {}\n",
-                f.rust_name, struct_name, sig_params, ret
+                hs_fn, struct_name, sig_params, ret
             ));
 
-            let pnames: Vec<_> = f.params.iter().map(|p| p.name.clone()).collect();
+            let pnames: Vec<_> = f.params.iter().map(|p| p.name.to_lower_camel_case()).collect();
             let plist = if pnames.is_empty() {
                 String::new()
             } else {
@@ -321,7 +322,7 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
 
             out.push_str(&format!(
                 "{} ({} fp){} = withForeignPtr fp $ \\ptr ->\n",
-                f.rust_name, struct_name, plist
+                hs_fn, struct_name, plist
             ));
             let call = format!("c_{}", hs_c);
             let full_call = build_borsh_call(f, &call, Some("ptr"));
@@ -341,10 +342,10 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
             emit_haddock(out, &f.docs);
             out.push_str(&format!(
                 "{} :: {} -> {}{}\n",
-                f.rust_name, struct_name, sig_params, ret
+                hs_fn, struct_name, sig_params, ret
             ));
 
-            let pnames: Vec<_> = f.params.iter().map(|p| p.name.clone()).collect();
+            let pnames: Vec<_> = f.params.iter().map(|p| p.name.to_lower_camel_case()).collect();
             let plist = if pnames.is_empty() {
                 String::new()
             } else {
@@ -357,7 +358,7 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
                     " {}",
                     f.params
                         .iter()
-                        .map(|p| unwrap_param(&p.name, &p.ty))
+                        .map(|p| unwrap_param(&p.name.to_lower_camel_case(), &p.ty))
                         .collect::<Vec<_>>()
                         .join(" ")
                 )
@@ -365,7 +366,7 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
 
             out.push_str(&format!(
                 "{} ({} fp){} = withForeignPtr fp $ \\ptr -> c_{} ptr{}\n",
-                f.rust_name, struct_name, plist, hs_c, unwrapped
+                hs_fn, struct_name, plist, hs_c, unwrapped
             ));
         }
         FfiFunctionKind::Destructor => {}
@@ -381,18 +382,19 @@ fn build_borsh_call(f: &FfiFunction, c_func: &str, self_arg: Option<&str>) -> St
     let mut borsh_wraps: Vec<(String, String, String)> = Vec::new();
 
     for p in &f.params {
+        let hs = p.name.to_lower_camel_case();
         if f.borsh_params.contains(&p.name) {
-            let ptr_var = format!("{}_ptr", p.name);
-            let len_var = format!("{}_len", p.name);
+            let ptr_var = format!("{}Ptr", hs);
+            let len_var = format!("{}Len", hs);
             args.push(format!("(castPtr {})", ptr_var));
             args.push(format!("(fromIntegral {})", len_var));
             borsh_wraps.push((
-                p.name.clone(),
+                hs,
                 ptr_var,
                 len_var,
             ));
         } else {
-            args.push(unwrap_param(&p.name, &p.ty));
+            args.push(unwrap_param(&hs, &p.ty));
         }
     }
 
