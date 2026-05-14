@@ -27,10 +27,7 @@
     clippy::shadow_unrelated,
 )]
 
-mod haskell;
-mod ir;
-mod parser;
-
+use hsrs_codegen::{haskell, parser};
 use std::path::PathBuf;
 
 fn main() {
