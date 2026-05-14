@@ -38,6 +38,7 @@ pub struct FfiFunction {
     pub rust_name: String,
     pub c_name: String,
     pub kind: FfiFunctionKind,
+    pub safety: FfiSafety,
     pub params: Vec<FfiParam>,
     pub return_type: Option<FfiType>,
     pub docs: Vec<String>,
@@ -50,6 +51,12 @@ pub enum FfiFunctionKind {
     MutMethod,
     RefMethod,
     Destructor,
+}
+
+pub enum FfiSafety {
+    Safe,
+    Unsafe,
+    Interruptible,
 }
 
 pub struct FfiParam {
