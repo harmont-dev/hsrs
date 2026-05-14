@@ -582,4 +582,268 @@ mod tests {
         let func = &parsed.modules[0].functions[0];
         assert_eq!(func.safety, FfiSafety::Unsafe);
     }
+
+    #[test]
+    fn parses_enum_name_and_variants() {
+        let src = r#"
+            #[hsrs::enumeration]
+            pub enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert_eq!(parsed.enums.len(), 1);
+        let e = &parsed.enums[0];
+        assert_eq!(e.name, "Color");
+        assert_eq!(e.variants, vec!["Red", "Green", "Blue"]);
+    }
+
+    #[test]
+    fn parses_enum_derives() {
+        let src = r#"
+            #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+            #[hsrs::enumeration]
+            pub enum Priority {
+                Low,
+                High,
+            }
+        "#;
+        let parsed = parse_source(src);
+        let e = &parsed.enums[0];
+        assert!(e.has_eq, "PartialEq should set has_eq");
+        assert!(e.has_show, "Debug should set has_show");
+        assert!(e.has_ord, "Ord should set has_ord");
+    }
+
+    #[test]
+    fn parses_enum_without_derives() {
+        let src = r#"
+            #[hsrs::enumeration]
+            pub enum Bare {
+                A,
+                B,
+            }
+        "#;
+        let parsed = parse_source(src);
+        let e = &parsed.enums[0];
+        assert!(!e.has_eq);
+        assert!(!e.has_show);
+        assert!(!e.has_ord);
+    }
+
+    #[test]
+    fn parses_enum_docs() {
+        let src = r#"
+            /// First line.
+            /// Second line.
+            #[hsrs::enumeration]
+            pub enum Documented {
+                A,
+            }
+        "#;
+        let parsed = parse_source(src);
+        let e = &parsed.enums[0];
+        assert_eq!(e.docs.len(), 2);
+        assert!(e.docs[0].contains("First line"));
+        assert!(e.docs[1].contains("Second line"));
+    }
+
+    #[test]
+    fn parses_value_type_fields() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Rect {
+                pub width: u32,
+                pub height: u32,
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert_eq!(parsed.value_types.len(), 1);
+        let vt = &parsed.value_types[0];
+        assert_eq!(vt.name, "Rect");
+        assert_eq!(vt.fields.len(), 2);
+        assert_eq!(vt.fields[0].name, "width");
+        assert_eq!(vt.fields[1].name, "height");
+        assert!(matches!(vt.fields[0].ty, FfiType::Uint(32)));
+        assert!(matches!(vt.fields[1].ty, FfiType::Uint(32)));
+    }
+
+    #[test]
+    fn parses_value_type_derives() {
+        let src = r#"
+            #[derive(Debug, PartialEq, Eq)]
+            #[hsrs::value_type]
+            pub struct Tagged {
+                pub id: i64,
+            }
+        "#;
+        let parsed = parse_source(src);
+        let vt = &parsed.value_types[0];
+        assert!(vt.has_eq);
+        assert!(vt.has_show);
+        assert!(!vt.has_ord);
+    }
+
+    #[test]
+    fn parses_value_type_docs() {
+        let src = r#"
+            /// A tagged value.
+            #[hsrs::value_type]
+            pub struct Tagged {
+                pub id: i64,
+            }
+        "#;
+        let parsed = parse_source(src);
+        assert_eq!(parsed.value_types[0].docs.len(), 1);
+        assert!(parsed.value_types[0].docs[0].contains("tagged value"));
+    }
+
+    #[test]
+    fn parses_all_primitive_param_types() {
+        let src = r#"
+            #[hsrs::module]
+            mod prims {
+                #[hsrs::data_type]
+                pub struct Prims { x: i32 }
+                impl Prims {
+                    #[hsrs::function]
+                    pub fn f(
+                        &self,
+                        a: i8, b: i16, c: i32, d: i64,
+                        e: u8, f: u16, g: u32, h: u64,
+                        i: bool, j: usize, k: isize,
+                    ) -> i32 { 0 }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let params = &parsed.modules[0].functions[0].params;
+        assert_eq!(params.len(), 11);
+        assert!(matches!(params[0].ty, FfiType::Int(8)));
+        assert!(matches!(params[1].ty, FfiType::Int(16)));
+        assert!(matches!(params[2].ty, FfiType::Int(32)));
+        assert!(matches!(params[3].ty, FfiType::Int(64)));
+        assert!(matches!(params[4].ty, FfiType::Uint(8)));
+        assert!(matches!(params[5].ty, FfiType::Uint(16)));
+        assert!(matches!(params[6].ty, FfiType::Uint(32)));
+        assert!(matches!(params[7].ty, FfiType::Uint(64)));
+        assert!(matches!(params[8].ty, FfiType::Bool));
+        assert!(matches!(params[9].ty, FfiType::Usize));
+        assert!(matches!(params[10].ty, FfiType::Isize));
+    }
+
+    #[test]
+    fn resolves_enum_param_type() {
+        let src = r#"
+            #[hsrs::enumeration]
+            pub enum Dir { Up, Down }
+
+            #[hsrs::module]
+            mod nav {
+                #[hsrs::data_type]
+                pub struct Nav { x: i32 }
+                impl Nav {
+                    #[hsrs::function]
+                    pub fn go(&mut self, d: Dir) { }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let param = &parsed.modules[0].functions[0].params[0];
+        assert_eq!(param.name, "d");
+        assert!(matches!(&param.ty, FfiType::Enum(n) if n == "Dir"));
+    }
+
+    #[test]
+    fn resolves_value_type_param() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Coord { pub x: i32, pub y: i32 }
+
+            #[hsrs::module(value_types(Coord))]
+            mod geo {
+                #[hsrs::data_type]
+                pub struct Geo { x: i32 }
+                impl Geo {
+                    #[hsrs::function]
+                    pub fn set(&mut self, c: Coord) { }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let param = &parsed.modules[0].functions[0].params[0];
+        assert!(matches!(&param.ty, FfiType::ValueType(n) if n == "Coord"));
+    }
+
+    #[test]
+    fn resolves_result_return_type() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Err { pub code: u32 }
+
+            #[hsrs::module(value_types(Err))]
+            mod op {
+                #[hsrs::data_type]
+                pub struct Op { x: i32 }
+                impl Op {
+                    #[hsrs::function]
+                    pub fn try_it(&self) -> Result<i64, Err> { Ok(0) }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let ret = parsed.modules[0].functions[0].return_type.as_ref().unwrap();
+        assert!(matches!(ret, FfiType::Result(ok, err)
+            if matches!(**ok, FfiType::Int(64))
+            && matches!(**err, FfiType::ValueType(ref n) if n == "Err")
+        ));
+    }
+
+    #[test]
+    fn resolves_option_return_type() {
+        let src = r#"
+            #[hsrs::module]
+            mod op {
+                #[hsrs::data_type]
+                pub struct Op { x: i32 }
+                impl Op {
+                    #[hsrs::function]
+                    pub fn maybe(&self) -> Option<i64> { Some(0) }
+                }
+            }
+        "#;
+        let parsed = parse_source(src);
+        let ret = parsed.modules[0].functions[0].return_type.as_ref().unwrap();
+        assert!(matches!(ret, FfiType::Option(inner) if matches!(**inner, FfiType::Int(64))));
+    }
+
+    #[test]
+    fn parses_multiple_enums() {
+        let src = r#"
+            #[hsrs::enumeration]
+            pub enum A { X }
+            #[hsrs::enumeration]
+            pub enum B { Y, Z }
+        "#;
+        let parsed = parse_source(src);
+        assert_eq!(parsed.enums.len(), 2);
+        assert_eq!(parsed.enums[0].name, "A");
+        assert_eq!(parsed.enums[1].name, "B");
+    }
+
+    #[test]
+    fn parses_multiple_value_types() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct A { pub x: i32 }
+            #[hsrs::value_type]
+            pub struct B { pub y: u64, pub z: bool }
+        "#;
+        let parsed = parse_source(src);
+        assert_eq!(parsed.value_types.len(), 2);
+        assert_eq!(parsed.value_types[0].fields.len(), 1);
+        assert_eq!(parsed.value_types[1].fields.len(), 2);
+    }
 }
