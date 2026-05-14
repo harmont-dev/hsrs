@@ -15,6 +15,7 @@ pub(crate) fn expand(item: TokenStream) -> syn::Result<TokenStream> {
     Ok(quote! {
         #(#attrs)*
         #[derive(Copy, Clone, ::hsrs::borsh::BorshSerialize, ::hsrs::borsh::BorshDeserialize)]
+        #[borsh(crate = "::hsrs::borsh")]
         #vis struct #ident #generics #fields #semi
     })
 }

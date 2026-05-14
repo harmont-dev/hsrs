@@ -160,9 +160,7 @@ dependencies = [
 name = "hsrs-examples"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "hsrs",
- "safer-ffi",
 ]
 
 [[package]]

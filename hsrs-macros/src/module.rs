@@ -64,7 +64,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             clippy::needless_pass_by_value,
             clippy::missing_docs_in_private_items,
         )]
-        #[::safer_ffi::ffi_export]
+        #[::hsrs::safer_ffi::ffi_export]
         fn #free_name(it: repr_c::Box<#struct_ident>) {
             drop(it);
         }
@@ -76,7 +76,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     };
     let use_ffi: Item = syn::parse_quote! {
         #[allow(clippy::wildcard_imports)]
-        use ::safer_ffi::prelude::*;
+        use ::hsrs::safer_ffi::prelude::*;
     };
     items.insert(0, use_super);
     items.insert(1, use_ffi);
@@ -117,7 +117,7 @@ fn process_struct(items: &mut [Item], struct_ident: &Ident) -> syn::Result<()> {
         if let Item::Struct(s) = item {
             if s.ident == *struct_ident {
                 s.attrs.retain(|a| !is_hsrs_path(a, "data_type"));
-                let derive: syn::Attribute = syn::parse_quote!(#[::safer_ffi::derive_ReprC]);
+                let derive: syn::Attribute = syn::parse_quote!(#[::hsrs::safer_ffi::derive_ReprC]);
                 let repr: syn::Attribute = syn::parse_quote!(#[repr(opaque)]);
                 s.attrs.insert(0, repr);
                 s.attrs.insert(0, derive);
@@ -290,7 +290,7 @@ fn generate_wrapper(
         if borsh_return {
             Ok(syn::parse_quote! {
                 #[allow(clippy::missing_docs_in_private_items)]
-                #[::safer_ffi::ffi_export]
+                #[::hsrs::safer_ffi::ffi_export]
                 fn #ffi_name(#(#ffi_params),*) -> repr_c::Box<::hsrs::BorshBuffer> {
                     let result = #struct_ident::#method_name(#(#call_args),*);
                     Box::new(::hsrs::BorshBuffer::from_borsh(&result)).into()
@@ -301,7 +301,7 @@ fn generate_wrapper(
             let param_names: Vec<_> = param_idents(&method.sig.inputs);
             Ok(syn::parse_quote! {
                 #[allow(clippy::missing_docs_in_private_items)]
-                #[::safer_ffi::ffi_export]
+                #[::hsrs::safer_ffi::ffi_export]
                 fn #ffi_name(#(#params),*) -> repr_c::Box<#struct_ident> {
                     Box::new(#struct_ident::#method_name(#(#param_names),*)).into()
                 }
@@ -311,7 +311,7 @@ fn generate_wrapper(
         if borsh_return {
             Ok(syn::parse_quote! {
                 #[allow(clippy::missing_docs_in_private_items)]
-                #[::safer_ffi::ffi_export]
+                #[::hsrs::safer_ffi::ffi_export]
                 fn #ffi_name(this: &mut #struct_ident, #(#ffi_params),*) -> repr_c::Box<::hsrs::BorshBuffer> {
                     let result = this.#method_name(#(#call_args),*);
                     Box::new(::hsrs::BorshBuffer::from_borsh(&result)).into()
@@ -321,14 +321,14 @@ fn generate_wrapper(
             match &method.sig.output {
                 ReturnType::Default => Ok(syn::parse_quote! {
                     #[allow(clippy::missing_docs_in_private_items)]
-                    #[::safer_ffi::ffi_export]
+                    #[::hsrs::safer_ffi::ffi_export]
                     fn #ffi_name(this: &mut #struct_ident, #(#ffi_params),*) {
                         this.#method_name(#(#call_args),*);
                     }
                 }),
                 ReturnType::Type(_, ret_ty) => Ok(syn::parse_quote! {
                     #[allow(clippy::missing_docs_in_private_items)]
-                    #[::safer_ffi::ffi_export]
+                    #[::hsrs::safer_ffi::ffi_export]
                     fn #ffi_name(this: &mut #struct_ident, #(#ffi_params),*) -> #ret_ty {
                         this.#method_name(#(#call_args),*)
                     }
@@ -338,7 +338,7 @@ fn generate_wrapper(
     } else if borsh_return {
         Ok(syn::parse_quote! {
             #[allow(clippy::missing_docs_in_private_items)]
-            #[::safer_ffi::ffi_export]
+            #[::hsrs::safer_ffi::ffi_export]
             fn #ffi_name(this: &#struct_ident, #(#ffi_params),*) -> repr_c::Box<::hsrs::BorshBuffer> {
                 let result = this.#method_name(#(#call_args),*);
                 Box::new(::hsrs::BorshBuffer::from_borsh(&result)).into()
@@ -348,14 +348,14 @@ fn generate_wrapper(
         match &method.sig.output {
             ReturnType::Default => Ok(syn::parse_quote! {
                 #[allow(clippy::missing_docs_in_private_items)]
-                #[::safer_ffi::ffi_export]
+                #[::hsrs::safer_ffi::ffi_export]
                 fn #ffi_name(this: &#struct_ident, #(#ffi_params),*) {
                     this.#method_name(#(#call_args),*);
                 }
             }),
             ReturnType::Type(_, ret_ty) => Ok(syn::parse_quote! {
                 #[allow(clippy::missing_docs_in_private_items)]
-                #[::safer_ffi::ffi_export]
+                #[::hsrs::safer_ffi::ffi_export]
                 fn #ffi_name(this: &#struct_ident, #(#ffi_params),*) -> #ret_ty {
                     this.#method_name(#(#call_args),*)
                 }

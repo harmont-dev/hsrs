@@ -126,11 +126,6 @@ nonzero (QuectoVm fp) r = withForeignPtr fp $ \ptr ->
   fromBorshBuffer =<< c_quectoVmNonzero ptr (let (Register r') = r in r')
 ```
 
-Value types and `Result`/`Option` are transferred as [borsh](https://borsh.io)-serialized
-bytes through an opaque buffer. Rust's `Result<T, E>` maps directly to Haskell's `Either E T`
-(borsh encodes `Err` as tag 0 / `Ok` as tag 1, matching `Left` / `Right`). `Option<T>` maps
-to `Maybe T` the same way.
-
 ## Usage
 
 Add `hsrs`, `safer-ffi`, and `borsh` to your crate:
