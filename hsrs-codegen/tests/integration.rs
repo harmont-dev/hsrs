@@ -18,7 +18,7 @@ use hsrs_codegen::{haskell, parser};
 
 fn source_to_haskell(src: &str) -> String {
     let parsed = parser::parse_str(src).expect("parse failed");
-    haskell::generate(&parsed)
+    haskell::generate(&parsed, "Bindings")
 }
 
 #[test]

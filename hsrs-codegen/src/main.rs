@@ -32,13 +32,57 @@ use std::path::PathBuf;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let mut source_file = None;
+    let mut output_file = None;
+    let mut module_name = "Bindings".to_owned();
 
-    if args.len() < 2 {
-        eprintln!("Usage: hsrs-codegen <source.rs> [output.hs]");
-        std::process::exit(1);
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--module" | "-m" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("--module requires a value");
+                    std::process::exit(1);
+                }
+                module_name = args[i].clone();
+                if module_name.is_empty() {
+                    eprintln!("--module value must not be empty");
+                    std::process::exit(1);
+                }
+            }
+            "-o" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("-o requires a value");
+                    std::process::exit(1);
+                }
+                output_file = Some(args[i].clone());
+            }
+            arg if !arg.starts_with('-') => {
+                if source_file.is_some() {
+                    eprintln!("Error: multiple source files not yet supported");
+                    std::process::exit(1);
+                }
+                source_file = Some(arg.to_owned());
+            }
+            other => {
+                eprintln!("unknown flag: {other}");
+                std::process::exit(1);
+            }
+        }
+        i += 1;
     }
 
-    let input = PathBuf::from(&args[1]);
+    let source = match source_file {
+        Some(f) => f,
+        None => {
+            eprintln!("Usage: hsrs-codegen <source.rs> [-o output.hs] [--module Name]");
+            std::process::exit(1);
+        }
+    };
+
+    let input = PathBuf::from(&source);
     let parsed = match parser::parse_file(&input) {
         Ok(p) => p,
         Err(e) => {
@@ -47,10 +91,10 @@ fn main() {
         }
     };
 
-    let output = haskell::generate(&parsed);
+    let output = haskell::generate(&parsed, &module_name);
 
-    if args.len() >= 3 {
-        std::fs::write(&args[2], &output).unwrap_or_else(|e| {
+    if let Some(out_path) = output_file {
+        std::fs::write(&out_path, &output).unwrap_or_else(|e| {
             eprintln!("Failed to write: {e}");
             std::process::exit(1);
         });

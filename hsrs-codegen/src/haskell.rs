@@ -3,7 +3,7 @@ use crate::ir::{
 };
 use heck::{ToLowerCamelCase, ToUpperCamelCase};
 
-pub fn generate(parsed: &ParsedFile) -> String {
+pub fn generate(parsed: &ParsedFile, module_name: &str) -> String {
     let mut out = String::new();
 
     out.push_str("{-# LANGUAGE PatternSynonyms #-}\n");
@@ -21,7 +21,7 @@ pub fn generate(parsed: &ParsedFile) -> String {
         out.push_str("{-# LANGUAGE DerivingVia #-}\n");
     }
 
-    out.push_str("\nmodule Bindings where\n\n");
+    out.push_str(&format!("\nmodule {} where\n\n", module_name));
     out.push_str("import Foreign\n");
     out.push_str("import Foreign.C.Types\n");
     out.push_str("import Data.Int\n");
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn function_names_are_camel_case() {
-        let output = generate(&make_module_with_snake_case_fn());
+        let output = generate(&make_module_with_snake_case_fn(), "Bindings");
         assert!(
             !output.contains("\nget_value "),
             "output should not contain snake_case function name 'get_value'"
@@ -606,7 +606,7 @@ mod tests {
 
     #[test]
     fn param_names_are_camel_case() {
-        let output = generate(&make_module_with_snake_case_fn());
+        let output = generate(&make_module_with_snake_case_fn(), "Bindings");
         assert!(
             !output.contains("new_dir"),
             "output should not contain snake_case param name 'new_dir'"
@@ -619,7 +619,7 @@ mod tests {
 
     #[test]
     fn borsh_param_names_are_camel_case() {
-        let output = generate(&make_module_with_snake_case_fn());
+        let output = generate(&make_module_with_snake_case_fn(), "Bindings");
         assert!(output.contains("newStatePtr"), "borsh ptr var should be camelCase");
         assert!(output.contains("newStateLen"), "borsh len var should be camelCase");
         assert!(!output.contains("new_state_ptr"), "borsh ptr var should not be snake_case");
@@ -628,7 +628,7 @@ mod tests {
 
     #[test]
     fn foreign_import_c_symbols_unchanged() {
-        let output = generate(&make_module_with_snake_case_fn());
+        let output = generate(&make_module_with_snake_case_fn(), "Bindings");
         assert!(
             output.contains("\"my_engine_get_value\""),
             "C symbol 'my_engine_get_value' should be present in foreign import"
@@ -677,7 +677,7 @@ mod tests {
             }],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(
             output.contains("foreign import ccall unsafe \"math_add\""),
             "unsafe function should emit 'ccall unsafe'. Got:\n{output}"
@@ -722,7 +722,7 @@ mod tests {
             }],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(
             output.contains("foreign import ccall safe \"math_compute\""),
             "safe function should emit 'ccall safe'. Got:\n{output}"
@@ -767,7 +767,7 @@ mod tests {
             }],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(
             output.contains("foreign import ccall interruptible \"io_read\""),
             "interruptible function should emit 'ccall interruptible'. Got:\n{output}"
@@ -809,7 +809,7 @@ mod tests {
             }],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(
             output.contains("foreign import ccall \"&math_free\""),
             "destructor should emit 'ccall \"&symbol\"' without safety keyword. Got:\n{output}"
@@ -830,7 +830,7 @@ mod tests {
             modules: vec![],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("newtype Color = Color Word8"), "enum newtype: {output}");
         assert!(output.contains("pattern Red :: Color"), "pattern sig: {output}");
         assert!(output.contains("pattern Red = Color 0"), "pattern val 0: {output}");
@@ -852,7 +852,7 @@ mod tests {
             modules: vec![],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("deriving (Eq, Show, Ord, Storable)"), "derives: {output}");
     }
 
@@ -870,7 +870,7 @@ mod tests {
             modules: vec![],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("deriving (Storable)"), "bare derives: {output}");
     }
 
@@ -898,7 +898,7 @@ mod tests {
                 docs: vec![],
             }],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(
             output.contains("deriving (BorshSize, ToBorsh, FromBorsh) via Word8"),
             "borsh enum deriving: {output}"
@@ -919,7 +919,7 @@ mod tests {
             modules: vec![],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(
             !output.contains("BorshSize"),
             "no borsh deriving without value types: {output}"
@@ -943,7 +943,7 @@ mod tests {
                 docs: vec![],
             }],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("data Point = Point"), "data decl: {output}");
         assert!(output.contains("pointX :: Int32"), "field x: {output}");
         assert!(output.contains("pointY :: Int32"), "field y: {output}");
@@ -971,7 +971,7 @@ mod tests {
                 docs: vec![],
             }],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("gameStatePlayerScore :: Word64"), "prefixed field: {output}");
         assert!(output.contains("gameStateLevel :: Word32"), "prefixed field: {output}");
     }
@@ -990,7 +990,7 @@ mod tests {
             modules: vec![],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("-- | Direction enum."), "haddock: {output}");
     }
 
@@ -1008,7 +1008,7 @@ mod tests {
                 docs: vec![" A point.".to_owned(), " With coords.".to_owned()],
             }],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("-- | A point."), "first doc line: {output}");
         assert!(output.contains("-- With coords."), "continuation: {output}");
     }
@@ -1056,7 +1056,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("data EngineRaw"), "raw type: {output}");
         assert!(
             output.contains("newtype Engine = Engine (ForeignPtr EngineRaw)"),
@@ -1080,7 +1080,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("new :: IO Engine"), "constructor sig: {output}");
         assert!(output.contains("new = do"), "constructor body: {output}");
         assert!(output.contains("ptr <- c_engineNew"), "c call: {output}");
@@ -1107,7 +1107,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("create :: Int32 -> Int32 -> IO Engine"), "sig: {output}");
         assert!(output.contains("create width height = do"), "body: {output}");
         assert!(output.contains("c_engineCreate width height"), "c call args: {output}");
@@ -1129,7 +1129,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("getValue :: Engine -> IO Int64"), "sig: {output}");
         assert!(
             output.contains("getValue (Engine fp) = withForeignPtr fp"),
@@ -1153,7 +1153,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("reset :: Engine -> IO ()"), "void sig: {output}");
     }
 
@@ -1176,7 +1176,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(
             output.contains("compute :: Engine -> Int64 -> Int64 -> IO Int64"),
             "sig: {output}"
@@ -1199,7 +1199,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("snapshot :: Engine -> IO State"), "sig: {output}");
         assert!(output.contains("fromBorshBuffer =<<"), "uses fromBorshBuffer: {output}");
         assert!(output.contains("IO (Ptr BorshBufferRaw)"), "foreign import returns BorshBufferRaw ptr: {output}");
@@ -1224,7 +1224,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("withBorshArg config"), "uses withBorshArg: {output}");
         assert!(output.contains("configPtr"), "uses ptr var: {output}");
         assert!(output.contains("configLen"), "uses len var: {output}");
@@ -1250,7 +1250,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("IO (Either MyErr Int64)"), "Result maps to Either: {output}");
     }
 
@@ -1270,7 +1270,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("IO (Maybe Int64)"), "Option maps to Maybe: {output}");
     }
 
@@ -1319,7 +1319,7 @@ mod tests {
             }],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("go :: Nav -> Dir -> IO ()"), "sig with enum: {output}");
         assert!(output.contains("(let (Dir d') = d in d')"), "unwrap enum: {output}");
     }
@@ -1338,7 +1338,7 @@ mod tests {
                 docs: vec![],
             }],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("{-# LANGUAGE DeriveGeneric #-}"), "DeriveGeneric: {output}");
         assert!(output.contains("{-# LANGUAGE DerivingVia #-}"), "DerivingVia: {output}");
         assert!(output.contains("import GHC.Generics"), "GHC.Generics: {output}");
@@ -1359,7 +1359,7 @@ mod tests {
             modules: vec![],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(!output.contains("DeriveGeneric"), "no DeriveGeneric: {output}");
         assert!(!output.contains("Codec.Borsh"), "no Borsh import: {output}");
         assert!(!output.contains("Data.ByteString"), "no ByteString: {output}");
@@ -1382,7 +1382,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("import Hsrs.Runtime"), "Hsrs.Runtime import: {output}");
         assert!(!output.contains("import Codec.Borsh"), "no Codec.Borsh: {output}");
         assert!(!output.contains("data BorshBufferRaw"), "no inline BorshBufferRaw: {output}");
@@ -1423,7 +1423,7 @@ mod tests {
             }],
             value_types: vec![],
         };
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("-- | The engine module."), "module doc: {output}");
         assert!(output.contains("-- | Create engine."), "fn doc: {output}");
     }
@@ -1447,7 +1447,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("withBorshArg config"), "should use withBorshArg: {output}");
         assert!(output.contains("newForeignPtr"), "should still wrap with ForeignPtr: {output}");
         assert!(output.contains("pure (Engine fp)"), "should still wrap result: {output}");
@@ -1487,7 +1487,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("Int8 -> Int16 -> Int32 -> Int64 -> Word8 -> Word16 -> Word32 -> Word64 -> CBool"), "ffi types: {output}");
     }
 
@@ -1507,7 +1507,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains(":: Engine -> IO Text"), "sig should use Text: {output}");
         assert!(output.contains("fromBorshBuffer"), "should use fromBorshBuffer: {output}");
     }
@@ -1531,7 +1531,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains(":: Engine -> Text -> IO ()"), "sig should use Text: {output}");
         assert!(output.contains("withBorshArg name"), "should use withBorshArg: {output}");
     }
@@ -1552,7 +1552,7 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("IO [Int32]"), "Vec<i32> should become [Int32]: {output}");
         assert!(output.contains("fromBorshBuffer"), "should use fromBorshBuffer: {output}");
     }
@@ -1576,8 +1576,27 @@ mod tests {
             },
             destructor(),
         ]);
-        let output = generate(&parsed);
+        let output = generate(&parsed, "Bindings");
         assert!(output.contains("[Word64] -> IO ()"), "Vec<u64> param should become [Word64]: {output}");
         assert!(output.contains("withBorshArg items"), "should use withBorshArg: {output}");
+    }
+
+    #[test]
+    fn custom_module_name() {
+        let parsed = ParsedFile {
+            enums: vec![FfiEnum {
+                name: "Dir".to_owned(),
+                variants: vec!["Up".to_owned()],
+                has_eq: false,
+                has_show: false,
+                has_ord: false,
+                docs: vec![],
+            }],
+            value_types: vec![],
+            modules: vec![],
+        };
+        let output = generate(&parsed, "MyApp.Ffi");
+        assert!(output.contains("module MyApp.Ffi where"), "got: {output}");
+        assert!(!output.contains("module Bindings where"));
     }
 }

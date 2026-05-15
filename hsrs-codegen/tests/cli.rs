@@ -67,10 +67,31 @@ fn file_output_writes_haskell() {
 
     let status = hsrs_codegen()
         .arg(src.to_str().unwrap())
+        .arg("-o")
         .arg(out.to_str().unwrap())
         .output()
         .unwrap();
     assert!(status.status.success());
     let contents = std::fs::read_to_string(&out).unwrap();
     assert!(contents.contains("newtype Dir"));
+}
+
+#[test]
+fn module_flag_sets_module_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("test.rs");
+    std::fs::write(&src, r#"
+        #[hsrs::enumeration]
+        pub enum Dir { Up, Down }
+    "#).unwrap();
+
+    let output = hsrs_codegen()
+        .arg(src.to_str().unwrap())
+        .arg("--module")
+        .arg("MyApp.FFI.Gen")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("module MyApp.FFI.Gen where"), "got: {stdout}");
 }
