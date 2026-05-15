@@ -21,6 +21,11 @@ fn source_to_haskell(src: &str) -> String {
     haskell::generate(&parsed, "Bindings")
 }
 
+fn source_to_haskell_with_module(src: &str, module_name: &str) -> String {
+    let parsed = parser::parse_str(src).expect("parse failed");
+    haskell::generate(&parsed, module_name)
+}
+
 #[test]
 fn minimal_module_round_trip() {
     let src = r#"
@@ -403,4 +408,177 @@ fn vec_type_round_trip() {
     assert!(output.contains(":: Canvas -> [Point] -> IO ()"), "Vec<Point> param: {output}");
     assert!(output.contains(":: Canvas -> IO [Word64]"), "Vec<u64> return: {output}");
     assert!(output.contains("withBorshArg pts"), "Vec param uses withBorshArg: {output}");
+}
+
+#[test]
+fn kitchen_sink_all_types() {
+    let src = r#"
+        #[hsrs::enumeration]
+        pub enum Status { Active, Inactive, Pending }
+
+        #[hsrs::value_type]
+        pub struct Config {
+            pub max_size: u64,
+        }
+
+        #[hsrs::value_type]
+        pub struct Error {
+            pub code: u32,
+        }
+
+        #[hsrs::module(value_types(Config, Error))]
+        mod engine {
+            #[hsrs::data_type]
+            pub struct Engine { x: i32 }
+
+            impl Engine {
+                #[hsrs::function]
+                pub fn new(config: Config) -> Self { Self { x: 0 } }
+
+                #[hsrs::function]
+                pub fn status(&self) -> Status {}
+
+                #[hsrs::function]
+                pub fn items(&self) -> Vec<u64> {}
+
+                #[hsrs::function]
+                pub fn name(&self) -> String {}
+
+                #[hsrs::function]
+                pub fn set_name(&mut self, name: String) {}
+
+                #[hsrs::function]
+                pub fn process(&mut self, items: Vec<Config>) -> Result<u64, Error> {}
+
+                #[hsrs::function]
+                pub fn find(&self, id: u64) -> Option<Config> {}
+            }
+        }
+    "#;
+    let output = source_to_haskell(src);
+
+    // Enum
+    assert!(output.contains("newtype Status = Status Word8"), "enum newtype: {output}");
+    assert!(output.contains("pattern Active"), "pattern Active: {output}");
+    assert!(output.contains("pattern Inactive"), "pattern Inactive: {output}");
+    assert!(output.contains("pattern Pending"), "pattern Pending: {output}");
+
+    // Value types
+    assert!(output.contains("data Config = Config"), "Config value type: {output}");
+    assert!(output.contains("data Error = Error"), "Error value type: {output}");
+
+    // Constructor with borsh param
+    assert!(output.contains("new :: Config -> IO Engine"), "constructor sig: {output}");
+    assert!(output.contains("withBorshArg config"), "constructor uses withBorshArg: {output}");
+
+    // Enum return
+    assert!(output.contains("status :: Engine -> IO Status"), "enum return sig: {output}");
+
+    // Vec return
+    assert!(output.contains("items :: Engine -> IO [Word64]"), "vec return sig: {output}");
+
+    // String return and param
+    assert!(output.contains("name :: Engine -> IO Text"), "string return sig: {output}");
+    assert!(output.contains("setName :: Engine -> Text -> IO ()"), "string param sig: {output}");
+
+    // Result return with borsh param
+    assert!(output.contains("process :: Engine -> [Config] -> IO (Either Error Word64)"), "result return sig: {output}");
+
+    // Option return
+    assert!(output.contains("find :: Engine -> Word64 -> IO (Maybe Config)"), "option return sig: {output}");
+}
+
+#[test]
+fn multiple_modules_in_one_file() {
+    let src = r#"
+        #[hsrs::module]
+        mod alpha {
+            #[hsrs::data_type]
+            pub struct Alpha { x: i32 }
+            impl Alpha {
+                #[hsrs::function]
+                pub fn new() -> Self { Self { x: 0 } }
+            }
+        }
+
+        #[hsrs::module]
+        mod beta {
+            #[hsrs::data_type]
+            pub struct Beta { y: i32 }
+            impl Beta {
+                #[hsrs::function]
+                pub fn new() -> Self { Self { y: 0 } }
+            }
+        }
+    "#;
+    let output = source_to_haskell(src);
+    assert!(output.contains("newtype Alpha"), "Alpha newtype: {output}");
+    assert!(output.contains("newtype Beta"), "Beta newtype: {output}");
+    assert!(output.contains("c_alphaNew"), "Alpha FFI: {output}");
+    assert!(output.contains("c_betaNew"), "Beta FFI: {output}");
+}
+
+#[test]
+fn string_in_value_type_field() {
+    let src = r#"
+        #[hsrs::value_type]
+        pub struct Person {
+            pub name: String,
+            pub age: u32,
+        }
+
+        #[hsrs::module(value_types(Person))]
+        mod db {
+            #[hsrs::data_type]
+            pub struct Db { x: i32 }
+            impl Db {
+                #[hsrs::function]
+                pub fn new() -> Self { Self { x: 0 } }
+                #[hsrs::function]
+                pub fn get_person(&self) -> Person {}
+            }
+        }
+    "#;
+    let output = source_to_haskell(src);
+    assert!(output.contains("data Person = Person"), "Person value type: {output}");
+    assert!(output.contains("personName :: Text"), "String field maps to Text: {output}");
+    assert!(output.contains("personAge :: Word32"), "u32 field maps to Word32: {output}");
+}
+
+#[test]
+fn vec_in_value_type_field() {
+    let src = r#"
+        #[hsrs::value_type]
+        pub struct Batch {
+            pub items: Vec<u32>,
+            pub label: String,
+        }
+
+        #[hsrs::module(value_types(Batch))]
+        mod proc {
+            #[hsrs::data_type]
+            pub struct Proc { x: i32 }
+            impl Proc {
+                #[hsrs::function]
+                pub fn new() -> Self { Self { x: 0 } }
+                #[hsrs::function]
+                pub fn run(&mut self, b: Batch) {}
+            }
+        }
+    "#;
+    let output = source_to_haskell(src);
+    assert!(output.contains("data Batch = Batch"), "Batch value type: {output}");
+    assert!(output.contains("batchItems :: [Word32]"), "Vec<u32> field maps to [Word32]: {output}");
+    assert!(output.contains("batchLabel :: Text"), "String field maps to Text: {output}");
+}
+
+#[test]
+fn custom_module_name_in_output() {
+    let src = r#"
+        #[hsrs::enumeration]
+        pub enum Dir { Up, Down }
+    "#;
+    let output = source_to_haskell_with_module(src, "MyApp.FFI.Bindings");
+    assert!(output.contains("module MyApp.FFI.Bindings where"), "custom module name: {output}");
+    assert!(!output.contains("module Bindings where"), "should not contain default module name: {output}");
 }
