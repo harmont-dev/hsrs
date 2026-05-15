@@ -1130,4 +1130,222 @@ mod tests {
         assert_eq!(parsed.modules[0].name, "my_engine");
         assert_eq!(parsed.modules[0].struct_name, "GameEngine");
     }
+
+    // ---- Error-path tests ----
+
+    /// Helper: assert parse_str returns Err containing `needle`.
+    fn assert_parse_err(src: &str, needle: &str) {
+        let result = parse_str(src);
+        match result {
+            Ok(_) => panic!("expected parse error containing {needle:?}, but got Ok"),
+            Err(e) => assert!(
+                e.contains(needle),
+                "expected error containing {needle:?}, got: {e:?}"
+            ),
+        }
+    }
+
+    #[test]
+    fn err_invalid_rust_syntax() {
+        assert_parse_err("fn foo( {", "failed to parse source");
+    }
+
+    #[test]
+    fn err_enum_non_unit_variant() {
+        let src = r#"
+            #[hsrs::enumeration]
+            pub enum Bad {
+                Ok,
+                WithData(i32),
+            }
+        "#;
+        assert_parse_err(src, "non-unit variant WithData in Bad");
+    }
+
+    #[test]
+    fn err_value_type_must_have_named_fields_tuple_struct() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Bad(i32, u64);
+        "#;
+        assert_parse_err(src, "must have named fields");
+    }
+
+    #[test]
+    fn err_value_type_must_have_named_fields_unit_struct() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Bad;
+        "#;
+        assert_parse_err(src, "must have named fields");
+    }
+
+    #[test]
+    fn err_value_type_unknown_field_type() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Bad {
+                pub x: HashMap,
+            }
+        "#;
+        assert_parse_err(src, "unknown type: HashMap");
+    }
+
+    #[test]
+    fn err_module_must_be_inline() {
+        let src = r#"
+            #[hsrs::module]
+            mod foo;
+        "#;
+        assert_parse_err(src, "must be inline");
+    }
+
+    #[test]
+    fn err_module_no_data_type() {
+        let src = r#"
+            #[hsrs::module]
+            mod bad {
+                pub struct NotAnnotated { x: i32 }
+                impl NotAnnotated {
+                    pub fn new() -> Self { Self { x: 0 } }
+                }
+            }
+        "#;
+        assert_parse_err(src, "no #[hsrs::data_type] in bad");
+    }
+
+    #[test]
+    fn err_module_no_impl_block() {
+        let src = r#"
+            #[hsrs::module]
+            mod bad {
+                #[hsrs::data_type]
+                pub struct MyType { x: i32 }
+            }
+        "#;
+        assert_parse_err(src, "no impl for MyType");
+    }
+
+    #[test]
+    fn err_unsupported_param_pattern() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn bad((a, b): (i32, i32)) -> Self { Self { x: a } }
+                }
+            }
+        "#;
+        assert_parse_err(src, "unsupported param pattern in bad");
+    }
+
+    #[test]
+    fn err_unknown_type() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn get(&self) -> String { String::new() }
+                }
+            }
+        "#;
+        assert_parse_err(src, "unknown type: String");
+    }
+
+    #[test]
+    fn err_result_wrong_arity() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn bad(&self) -> Result<i32> { Ok(0) }
+                }
+            }
+        "#;
+        assert_parse_err(src, "Result requires exactly 2 type arguments");
+    }
+
+    #[test]
+    fn err_option_wrong_arity() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn bad(&self) -> Option<i32, u32> { None }
+                }
+            }
+        "#;
+        assert_parse_err(src, "Option requires exactly 1 type argument");
+    }
+
+    #[test]
+    fn err_unsupported_generic_type() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn bad(&self) -> Vec<i32> { vec![] }
+                }
+            }
+        "#;
+        assert_parse_err(src, "unsupported generic type: Vec");
+    }
+
+    #[test]
+    fn err_qualified_types_not_supported() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn bad(&self) -> std::io::Error { todo!() }
+                }
+            }
+        "#;
+        assert_parse_err(src, "qualified types not supported");
+    }
+
+    #[test]
+    fn err_unsupported_type_syntax_reference() {
+        let src = r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct T { x: i32 }
+                impl T {
+                    #[hsrs::function]
+                    pub fn bad(&self, x: &i32) -> i32 { 0 }
+                }
+            }
+        "#;
+        assert_parse_err(src, "unsupported type syntax");
+    }
+
+    #[test]
+    fn err_unsupported_type_syntax_in_value_type_field() {
+        let src = r#"
+            #[hsrs::value_type]
+            pub struct Bad {
+                pub x: &'static i32,
+            }
+        "#;
+        assert_parse_err(src, "unsupported type syntax");
+    }
 }
