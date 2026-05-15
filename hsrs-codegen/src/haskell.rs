@@ -29,19 +29,10 @@ pub fn generate(parsed: &ParsedFile) -> String {
 
     if has_value_types || has_borsh_functions {
         out.push_str("import GHC.Generics (Generic)\n");
-        out.push_str("import Codec.Borsh\n");
-    }
-    if has_borsh_functions {
-        out.push_str("import qualified Data.ByteString as BS\n");
-        out.push_str("import Data.ByteString (useAsCStringLen)\n");
-        out.push_str("import Data.ByteString.Unsafe (unsafePackCStringLen)\n");
+        out.push_str("import Hsrs.Runtime\n");
     }
 
     out.push('\n');
-
-    if has_borsh_functions {
-        generate_borsh_utilities(&mut out);
-    }
 
     for e in &parsed.enums {
         generate_enum(&mut out, e, has_borsh_functions || has_value_types);
@@ -64,23 +55,6 @@ fn emit_haddock(out: &mut String, docs: &[String]) {
             out.push_str(&format!("--{}\n", line));
         }
     }
-}
-
-fn generate_borsh_utilities(out: &mut String) {
-    out.push_str("data BorshBufferRaw\n\n");
-    out.push_str("foreign import ccall \"hsrs_borsh_len\" c_hsrsBorshLen :: Ptr BorshBufferRaw -> IO Word64\n");
-    out.push_str("foreign import ccall \"hsrs_borsh_ptr\" c_hsrsBorshPtr :: Ptr BorshBufferRaw -> IO (Ptr Word8)\n");
-    out.push_str("foreign import ccall \"&hsrs_borsh_free\" c_hsrsBorshFree :: FinalizerPtr BorshBufferRaw\n\n");
-    out.push_str("fromBorshBuffer :: FromBorsh a => Ptr BorshBufferRaw -> IO a\n");
-    out.push_str("fromBorshBuffer bufPtr = do\n");
-    out.push_str("  fp <- newForeignPtr c_hsrsBorshFree bufPtr\n");
-    out.push_str("  withForeignPtr fp $ \\p -> do\n");
-    out.push_str("    len <- c_hsrsBorshLen p\n");
-    out.push_str("    dataPtr <- c_hsrsBorshPtr p\n");
-    out.push_str("    bs <- unsafePackCStringLen (castPtr dataPtr, fromIntegral len)\n");
-    out.push_str("    case deserialiseBorsh bs of\n");
-    out.push_str("      Left err -> error (show err)\n");
-    out.push_str("      Right val -> pure val\n\n");
 }
 
 fn generate_enum(out: &mut String, e: &FfiEnum, with_borsh: bool) {
@@ -396,8 +370,8 @@ fn build_borsh_call(f: &FfiFunction, c_func: &str, self_arg: Option<&str>) -> St
         if f.borsh_params.contains(&p.name) {
             let ptr_var = format!("{}Ptr", hs);
             let len_var = format!("{}Len", hs);
-            args.push(format!("(castPtr {})", ptr_var));
-            args.push(format!("(fromIntegral {})", len_var));
+            args.push(ptr_var.clone());
+            args.push(len_var.clone());
             borsh_wraps.push((
                 hs,
                 ptr_var,
@@ -413,7 +387,7 @@ fn build_borsh_call(f: &FfiFunction, c_func: &str, self_arg: Option<&str>) -> St
     let mut result = call;
     for (name, ptr_var, len_var) in borsh_wraps.iter().rev() {
         result = format!(
-            "useAsCStringLen (serialiseBorsh {}) $ \\({}, {}) -> {}",
+            "withBorshArg {} $ \\{} {} -> {}",
             name, ptr_var, len_var, result
         );
     }
@@ -1201,7 +1175,7 @@ mod tests {
     }
 
     #[test]
-    fn borsh_param_uses_serialise_borsh() {
+    fn borsh_param_uses_with_borsh_arg() {
         let parsed = make_simple_module(vec![
             FfiFunction {
                 rust_name: "apply".to_owned(),
@@ -1220,9 +1194,10 @@ mod tests {
             destructor(),
         ]);
         let output = generate(&parsed);
-        assert!(output.contains("serialiseBorsh config"), "serialises borsh param: {output}");
+        assert!(output.contains("withBorshArg config"), "uses withBorshArg: {output}");
         assert!(output.contains("configPtr"), "uses ptr var: {output}");
         assert!(output.contains("configLen"), "uses len var: {output}");
+        assert!(!output.contains("useAsCStringLen"), "should not contain useAsCStringLen: {output}");
     }
 
     #[test]
@@ -1336,7 +1311,7 @@ mod tests {
         assert!(output.contains("{-# LANGUAGE DeriveGeneric #-}"), "DeriveGeneric: {output}");
         assert!(output.contains("{-# LANGUAGE DerivingVia #-}"), "DerivingVia: {output}");
         assert!(output.contains("import GHC.Generics"), "GHC.Generics: {output}");
-        assert!(output.contains("import Codec.Borsh"), "Codec.Borsh: {output}");
+        assert!(output.contains("import Hsrs.Runtime"), "Hsrs.Runtime: {output}");
     }
 
     #[test]
@@ -1357,6 +1332,7 @@ mod tests {
         assert!(!output.contains("DeriveGeneric"), "no DeriveGeneric: {output}");
         assert!(!output.contains("Codec.Borsh"), "no Borsh import: {output}");
         assert!(!output.contains("Data.ByteString"), "no ByteString: {output}");
+        assert!(!output.contains("Hsrs.Runtime"), "no Hsrs.Runtime for enum-only: {output}");
     }
 
     #[test]
@@ -1376,10 +1352,9 @@ mod tests {
             destructor(),
         ]);
         let output = generate(&parsed);
-        assert!(output.contains("import Codec.Borsh"), "Borsh import: {output}");
-        assert!(output.contains("Data.ByteString"), "ByteString: {output}");
-        assert!(output.contains("BorshBufferRaw"), "BorshBufferRaw type: {output}");
-        assert!(output.contains("fromBorshBuffer"), "utility fn: {output}");
+        assert!(output.contains("import Hsrs.Runtime"), "Hsrs.Runtime import: {output}");
+        assert!(!output.contains("import Codec.Borsh"), "no Codec.Borsh: {output}");
+        assert!(!output.contains("data BorshBufferRaw"), "no inline BorshBufferRaw: {output}");
     }
 
     #[test]

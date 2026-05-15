@@ -146,10 +146,10 @@ fn full_featured_round_trip() {
     assert!(hs.contains("{-# LANGUAGE DerivingVia #-}"));
     assert!(hs.contains("{-# LANGUAGE PatternSynonyms #-}"));
 
-    // Borsh infrastructure present
-    assert!(hs.contains("import Codec.Borsh"));
-    assert!(hs.contains("import qualified Data.ByteString"));
-    assert!(hs.contains("data BorshBufferRaw"));
+    // Borsh infrastructure via Hsrs.Runtime
+    assert!(hs.contains("import Hsrs.Runtime"));
+    assert!(!hs.contains("import Codec.Borsh"));
+    assert!(!hs.contains("data BorshBufferRaw"));
     assert!(hs.contains("fromBorshBuffer"));
 
     // Enum
@@ -184,7 +184,7 @@ fn full_featured_round_trip() {
     assert!(hs.contains("IO (Maybe Int64)"));
 
     // Borsh param (value type param)
-    assert!(hs.contains("serialiseBorsh target"));
+    assert!(hs.contains("withBorshArg target"));
 
     // Haddock
     assert!(hs.contains("-- | Create a navigator at origin."));
@@ -294,4 +294,60 @@ fn multiple_modules_round_trip() {
     assert!(hs.contains("ccall safe \"alpha_new\""));
     assert!(hs.contains("ccall safe \"beta_new\""));
     assert!(hs.contains("ccall safe \"beta_get\""));
+}
+
+#[test]
+fn borsh_module_imports_hsrs_runtime() {
+    let src = r#"
+        #[hsrs::value_type]
+        pub struct State {
+            pub x: i32,
+        }
+
+        #[hsrs::module(value_types(State))]
+        mod engine {
+            #[hsrs::data_type]
+            pub struct Engine { x: i32 }
+            impl Engine {
+                #[hsrs::function]
+                pub fn new() -> Self { Self { x: 0 } }
+
+                #[hsrs::function]
+                pub fn get(&self) -> State {
+                    State { x: self.x }
+                }
+            }
+        }
+    "#;
+    let hs = source_to_haskell(src);
+    assert!(hs.contains("import Hsrs.Runtime"), "should import Hsrs.Runtime");
+    assert!(!hs.contains("import Codec.Borsh"), "should not import Codec.Borsh");
+    assert!(!hs.contains("data BorshBufferRaw"), "should not define BorshBufferRaw inline");
+}
+
+#[test]
+fn borsh_param_uses_with_borsh_arg() {
+    let src = r#"
+        #[hsrs::value_type]
+        pub struct Config {
+            pub level: u32,
+        }
+
+        #[hsrs::module(value_types(Config))]
+        mod engine {
+            #[hsrs::data_type]
+            pub struct Engine { x: i32 }
+            impl Engine {
+                #[hsrs::function]
+                pub fn new() -> Self { Self { x: 0 } }
+
+                #[hsrs::function]
+                pub fn apply(&mut self, config: Config) {}
+            }
+        }
+    "#;
+    let hs = source_to_haskell(src);
+    assert!(hs.contains("withBorshArg"), "should use withBorshArg");
+    assert!(!hs.contains("useAsCStringLen"), "should not use useAsCStringLen");
+    assert!(!hs.contains("castPtr"), "should not use castPtr");
 }
