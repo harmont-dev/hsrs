@@ -95,6 +95,10 @@ This pulls in Borsh serialization automatically — no extra dependencies needed
 
 `Result<T, E>` becomes `Either E T` and `Option<T>` becomes `Maybe T`, both serialized transparently.
 
+## Platform notes
+
+`usize` and `isize` are mapped to `Word64` and `Int64` respectively. This matches 64-bit platforms (x86_64, aarch64). If you target 32-bit platforms, be aware that values may be truncated.
+
 ## Full example
 
 <details>
