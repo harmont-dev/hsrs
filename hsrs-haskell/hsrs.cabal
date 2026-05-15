@@ -10,7 +10,7 @@ description:
   is pulled in transitively.
 
 license:       MIT
--- license-file: add LICENSE before publishing to Hackage
+license-file:  LICENSE
 author:        Marko Vejnovic
 maintainer:    marko@mesa.dev
 category:      FFI, Foreign

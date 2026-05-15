@@ -2,6 +2,7 @@
 name = "hsrs-codegen"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 syn = { version = "2", features = ["full"] }
