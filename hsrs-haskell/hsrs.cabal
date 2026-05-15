@@ -1,0 +1,28 @@
+cabal-version: 2.4
+name:          hsrs
+version:       0.1.0.0
+synopsis:      Runtime support for hsrs-generated Haskell FFI bindings
+description:
+  Provides the Haskell-side runtime needed by code generated
+  by hsrs-codegen, including Borsh serialization utilities for
+  FFI data transfer. Users of hsrs-generated bindings only need
+  to add @hsrs@ to their @build-depends@ — the @borsh@ package
+  is pulled in transitively.
+
+license:       MIT
+-- license-file: add LICENSE before publishing to Hackage
+author:        Marko Vejnovic
+maintainer:    marko@mesa.dev
+category:      FFI, Foreign
+build-type:    Simple
+extra-doc-files: CHANGELOG.md
+
+library
+  exposed-modules: Hsrs.Runtime
+  build-depends:
+      base        >= 4.16 && < 5
+    , borsh       >= 0.3  && < 0.4
+    , bytestring  >= 0.11 && < 0.13
+  hs-source-dirs: src
+  default-language: Haskell2010
+  ghc-options: -Wall
