@@ -28,11 +28,11 @@
 )]
 
 use hsrs_codegen::{haskell, parser};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let mut source_file = None;
+    let mut source_files: Vec<String> = Vec::new();
     let mut output_file = None;
     let mut module_name = "Bindings".to_owned();
 
@@ -60,11 +60,7 @@ fn main() {
                 output_file = Some(args[i].clone());
             }
             arg if !arg.starts_with('-') => {
-                if source_file.is_some() {
-                    eprintln!("Error: multiple source files not yet supported");
-                    std::process::exit(1);
-                }
-                source_file = Some(arg.to_owned());
+                source_files.push(arg.to_owned());
             }
             other => {
                 eprintln!("unknown flag: {other}");
@@ -74,16 +70,14 @@ fn main() {
         i += 1;
     }
 
-    let source = match source_file {
-        Some(f) => f,
-        None => {
-            eprintln!("Usage: hsrs-codegen <source.rs> [-o output.hs] [--module Name]");
-            std::process::exit(1);
-        }
-    };
+    if source_files.is_empty() {
+        eprintln!("Usage: hsrs-codegen <source.rs>... [-o output.hs] [--module Name]");
+        std::process::exit(1);
+    }
 
-    let input = PathBuf::from(&source);
-    let parsed = match parser::parse_file(&input) {
+    let paths: Vec<PathBuf> = source_files.iter().map(PathBuf::from).collect();
+    let path_refs: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
+    let parsed = match parser::parse_files(&path_refs) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Error: {e}");

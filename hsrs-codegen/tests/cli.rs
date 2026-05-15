@@ -95,3 +95,35 @@ fn module_flag_sets_module_name() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("module MyApp.FFI.Gen where"), "got: {stdout}");
 }
+
+#[test]
+fn multi_file_merges_types() {
+    let dir = tempfile::tempdir().unwrap();
+    let types = dir.path().join("types.rs");
+    std::fs::write(&types, r#"
+        #[hsrs::enumeration]
+        pub enum Dir { Up, Down }
+    "#).unwrap();
+    let module = dir.path().join("module.rs");
+    std::fs::write(&module, r#"
+        #[hsrs::module]
+        mod canvas {
+            #[hsrs::data_type]
+            pub struct Canvas { x: i32 }
+            impl Canvas {
+                #[hsrs::function]
+                pub fn dir(&self) -> Dir {}
+            }
+        }
+    "#).unwrap();
+
+    let output = hsrs_codegen()
+        .arg(types.to_str().unwrap())
+        .arg(module.to_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("newtype Dir"));
+    assert!(stdout.contains("newtype Canvas"));
+}

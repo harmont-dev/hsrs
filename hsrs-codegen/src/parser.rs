@@ -11,30 +11,61 @@ pub fn parse_file(path: &Path) -> Result<ParsedFile, String> {
     parse_str(&source)
 }
 
-pub fn parse_str(source: &str) -> Result<ParsedFile, String> {
-    let file = syn::parse_file(source)
-        .map_err(|e| format!("failed to parse source: {e}"))?;
+pub fn parse_sources(sources: &[&str]) -> Result<ParsedFile, String> {
+    let files: Vec<syn::File> = sources
+        .iter()
+        .map(|s| syn::parse_file(s).map_err(|e| format!("failed to parse source: {e}")))
+        .collect::<Result<_, _>>()?;
 
-    let mut enums = Vec::new();
-    let mut modules = Vec::new();
-    let mut value_types = Vec::new();
+    let mut all_enums = Vec::new();
+    let mut all_value_types = Vec::new();
+    let mut all_modules = Vec::new();
 
-    for item in &file.items {
-        match item {
-            Item::Enum(e) if has_hsrs_attr(&e.attrs, "enumeration") => {
-                enums.push(parse_enum(e)?);
+    for file in &files {
+        for item in &file.items {
+            match item {
+                Item::Enum(e) if has_hsrs_attr(&e.attrs, "enumeration") => {
+                    all_enums.push(parse_enum(e)?);
+                }
+                Item::Struct(s) if has_hsrs_attr(&s.attrs, "value_type") => {
+                    all_value_types.push(parse_value_type(s, &all_enums, &all_value_types)?);
+                }
+                _ => {}
             }
-            Item::Struct(s) if has_hsrs_attr(&s.attrs, "value_type") => {
-                value_types.push(parse_value_type(s, &enums, &value_types)?);
-            }
-            Item::Mod(m) if has_hsrs_attr(&m.attrs, "module") => {
-                modules.push(parse_module(m, &enums, &value_types)?);
-            }
-            _ => {}
         }
     }
 
-    Ok(ParsedFile { enums, modules, value_types })
+    for file in &files {
+        for item in &file.items {
+            if let Item::Mod(m) = item {
+                if has_hsrs_attr(&m.attrs, "module") {
+                    all_modules.push(parse_module(m, &all_enums, &all_value_types)?);
+                }
+            }
+        }
+    }
+
+    Ok(ParsedFile {
+        enums: all_enums,
+        modules: all_modules,
+        value_types: all_value_types,
+    })
+}
+
+pub fn parse_files(paths: &[&Path]) -> Result<ParsedFile, String> {
+    let sources: Vec<String> = paths
+        .iter()
+        .map(|p| {
+            std::fs::read_to_string(p)
+                .map_err(|e| format!("failed to read {}: {e}", p.display()))
+        })
+        .collect::<Result<_, _>>()?;
+    let refs: Vec<&str> = sources.iter().map(String::as_str).collect();
+    parse_sources(&refs)
+}
+
+pub fn parse_str(source: &str) -> Result<ParsedFile, String> {
+    parse_sources(&[source])
 }
 
 fn has_hsrs_attr(attrs: &[syn::Attribute], name: &str) -> bool {
@@ -1466,5 +1497,55 @@ mod tests {
                 }
             }
         "#, "Vec requires exactly 1 type argument");
+    }
+
+    #[test]
+    fn parse_multi_merges_files() {
+        let src_a = r#"
+            #[hsrs::enumeration]
+            pub enum Dir { Up, Down }
+        "#;
+        let src_b = r#"
+            #[hsrs::value_type]
+            pub struct Point { pub x: i32, pub y: i32 }
+        "#;
+        let parsed = parse_sources(&[src_a, src_b]).unwrap();
+        assert_eq!(parsed.enums.len(), 1);
+        assert_eq!(parsed.value_types.len(), 1);
+    }
+
+    #[test]
+    fn parse_multi_module_sees_types_from_other_file() {
+        let types_src = r#"
+            #[hsrs::enumeration]
+            pub enum Dir { Up, Down }
+
+            #[hsrs::value_type]
+            pub struct Point { pub x: i32, pub y: i32 }
+        "#;
+        let module_src = r#"
+            #[hsrs::module(value_types(Point))]
+            mod canvas {
+                #[hsrs::data_type]
+                pub struct Canvas { x: i32 }
+                impl Canvas {
+                    #[hsrs::function]
+                    pub fn new() -> Self { Self { x: 0 } }
+                    #[hsrs::function]
+                    pub fn dir(&self) -> Dir {}
+                    #[hsrs::function]
+                    pub fn origin(&self) -> Point {}
+                }
+            }
+        "#;
+        let parsed = parse_sources(&[types_src, module_src]).unwrap();
+        assert_eq!(parsed.enums.len(), 1);
+        assert_eq!(parsed.value_types.len(), 1);
+        assert_eq!(parsed.modules.len(), 1);
+        let funcs = &parsed.modules[0].functions;
+        // dir() returns Dir enum
+        assert!(matches!(funcs[1].return_type, Some(FfiType::Enum(ref n)) if n == "Dir"));
+        // origin() returns Point value type
+        assert!(matches!(funcs[2].return_type, Some(FfiType::ValueType(ref n)) if n == "Point"));
     }
 }
