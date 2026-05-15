@@ -306,7 +306,7 @@ fn parse_module(
 fn is_borsh_type(ty: &FfiType) -> bool {
     matches!(
         ty,
-        FfiType::ValueType(_) | FfiType::Result(_, _) | FfiType::Option(_)
+        FfiType::ValueType(_) | FfiType::Result(_, _) | FfiType::Option(_) | FfiType::String
     )
 }
 
@@ -396,6 +396,7 @@ fn resolve_type(
                     "usize" => Ok(FfiType::Usize),
                     "isize" => Ok(FfiType::Isize),
                     "Self" => Ok(FfiType::Unit),
+                    "String" => Ok(FfiType::String),
                     other => {
                         if known_enums.iter().any(|e| e.name == other) {
                             Ok(FfiType::Enum(other.to_owned()))
@@ -1251,11 +1252,11 @@ mod tests {
                 pub struct T { x: i32 }
                 impl T {
                     #[hsrs::function]
-                    pub fn get(&self) -> String { String::new() }
+                    pub fn get(&self) -> HashMap { todo!() }
                 }
             }
         "#;
-        assert_parse_err(src, "unknown type: String");
+        assert_parse_err(src, "unknown type: HashMap");
     }
 
     #[test]
@@ -1347,5 +1348,40 @@ mod tests {
             }
         "#;
         assert_parse_err(src, "unsupported type syntax");
+    }
+
+    #[test]
+    fn resolves_string_type() {
+        let parsed = parse_source(r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct S { x: i32 }
+                impl S {
+                    #[hsrs::function]
+                    pub fn name(&self) -> String {}
+                }
+            }
+        "#);
+        let f = &parsed.modules[0].functions[0];
+        assert!(matches!(f.return_type, Some(FfiType::String)));
+        assert!(f.borsh_return);
+    }
+
+    #[test]
+    fn string_param_is_borsh() {
+        let parsed = parse_source(r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct S { x: i32 }
+                impl S {
+                    #[hsrs::function]
+                    pub fn set_name(&mut self, name: String) {}
+                }
+            }
+        "#);
+        let f = &parsed.modules[0].functions[0];
+        assert_eq!(f.borsh_params, vec!["name"]);
     }
 }

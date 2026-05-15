@@ -76,4 +76,5 @@ pub enum FfiType {
     ValueType(String),
     Result(Box<FfiType>, Box<FfiType>),
     Option(Box<FfiType>),
+    String,
 }

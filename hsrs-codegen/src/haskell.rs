@@ -447,7 +447,7 @@ fn ffi_type(ty: &FfiType) -> String {
         FfiType::Enum(_) => "Word8".to_owned(),
         FfiType::Unit => "()".to_owned(),
         FfiType::ValueType(name) => name.clone(),
-        FfiType::Result(_, _) | FfiType::Option(_) => "()".to_owned(),
+        FfiType::Result(_, _) | FfiType::Option(_) | FfiType::String => "()".to_owned(),
         FfiType::Int(w) | FfiType::Uint(w) => unreachable!("unsupported bit width: {w}"),
     }
 }
@@ -457,6 +457,7 @@ fn hl_type(ty: &FfiType) -> String {
         FfiType::Enum(name) | FfiType::ValueType(name) => name.clone(),
         FfiType::Result(ok, err) => format!("(Either {} {})", hl_type(err), hl_type(ok)),
         FfiType::Option(inner) => format!("(Maybe {})", hl_type(inner)),
+        FfiType::String => "Text".to_owned(),
         other => ffi_type(other),
     }
 }
@@ -1487,5 +1488,50 @@ mod tests {
         ]);
         let output = generate(&parsed);
         assert!(output.contains("Int8 -> Int16 -> Int32 -> Int64 -> Word8 -> Word16 -> Word32 -> Word64 -> CBool"), "ffi types: {output}");
+    }
+
+    #[test]
+    fn string_return_type_becomes_text() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "name".to_owned(),
+                c_name: "engine_name".to_owned(),
+                kind: FfiFunctionKind::RefMethod,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: Some(FfiType::String),
+                docs: vec![],
+                borsh_return: true,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains(":: Engine -> IO Text"), "sig should use Text: {output}");
+        assert!(output.contains("fromBorshBuffer"), "should use fromBorshBuffer: {output}");
+    }
+
+    #[test]
+    fn string_param_uses_with_borsh_arg() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "set_name".to_owned(),
+                c_name: "engine_set_name".to_owned(),
+                kind: FfiFunctionKind::MutMethod,
+                safety: FfiSafety::Safe,
+                params: vec![FfiParam {
+                    name: "name".to_owned(),
+                    ty: FfiType::String,
+                }],
+                return_type: None,
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec!["name".to_owned()],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains(":: Engine -> Text -> IO ()"), "sig should use Text: {output}");
+        assert!(output.contains("withBorshArg name"), "should use withBorshArg: {output}");
     }
 }

@@ -227,7 +227,8 @@ fn needs_borsh(ty: &Type, value_type_names: &HashSet<String>) -> bool {
     }
     if let Type::Path(tp) = ty {
         if let Some(ident) = tp.path.get_ident() {
-            return value_type_names.contains(&ident.to_string());
+            let s = ident.to_string();
+            return value_type_names.contains(&s) || s == "String";
         }
         if let Some(seg) = tp.path.segments.last() {
             let name = seg.ident.to_string();

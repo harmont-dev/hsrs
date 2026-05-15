@@ -351,3 +351,27 @@ fn borsh_param_uses_with_borsh_arg() {
     assert!(!hs.contains("useAsCStringLen"), "should not use useAsCStringLen");
     assert!(!hs.contains("castPtr"), "should not use castPtr");
 }
+
+#[test]
+fn string_type_round_trip() {
+    let src = r#"
+        #[hsrs::module]
+        mod db {
+            #[hsrs::data_type]
+            pub struct Db { x: i32 }
+            impl Db {
+                #[hsrs::function]
+                pub fn new() -> Self { Self { x: 0 } }
+                #[hsrs::function]
+                pub fn name(&self) -> String { String::new() }
+                #[hsrs::function]
+                pub fn set_name(&mut self, name: String) {}
+            }
+        }
+    "#;
+    let output = source_to_haskell(src);
+    assert!(output.contains(":: Db -> IO Text"), "String return maps to Text: {output}");
+    assert!(output.contains(":: Db -> Text -> IO ()"), "String param maps to Text: {output}");
+    assert!(output.contains("fromBorshBuffer"), "String return uses fromBorshBuffer: {output}");
+    assert!(output.contains("withBorshArg name"), "String param uses withBorshArg: {output}");
+}

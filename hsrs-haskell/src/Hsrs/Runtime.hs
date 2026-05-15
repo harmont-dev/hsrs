@@ -11,9 +11,12 @@ module Hsrs.Runtime
   , AsStruct
   , serialiseBorsh
   , deserialiseBorsh
+    -- * Re-exports for generated code
+  , Text
   ) where
 
 import Codec.Borsh (AsStruct, BorshSize, FromBorsh, ToBorsh, deserialiseBorsh, serialiseBorsh)
+import Data.Text (Text)
 import Data.ByteString (useAsCStringLen)
 import Data.ByteString.Unsafe (unsafePackCStringLen)
 import Data.Word (Word8, Word64)
