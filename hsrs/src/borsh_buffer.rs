@@ -11,10 +11,7 @@ pub struct BorshBuffer {
 impl BorshBuffer {
     /// Serialize a value into a new buffer.
     pub fn from_borsh<T: borsh::BorshSerialize>(val: &T) -> Self {
-        match borsh::to_vec(val) {
-            Ok(bytes) => Self { bytes },
-            Err(_) => Self { bytes: Vec::new() },
-        }
+        borsh::to_vec(val).map_or_else(|_| Self { bytes: Vec::new() }, |bytes| Self { bytes })
     }
 }
 
@@ -32,11 +29,8 @@ fn hsrs_borsh_ptr(buf: &BorshBuffer) -> *const u8 {
     buf.bytes.as_ptr()
 }
 
-/// Frees the BorshBuffer and its backing memory.
-#[allow(
-    clippy::needless_pass_by_value,
-    clippy::missing_docs_in_private_items,
-)]
+/// Frees the `BorshBuffer` and its backing memory.
+#[allow(clippy::needless_pass_by_value, clippy::missing_docs_in_private_items)]
 #[ffi_export]
 fn hsrs_borsh_free(buf: repr_c::Box<BorshBuffer>) {
     drop(buf);

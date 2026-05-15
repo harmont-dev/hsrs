@@ -15,6 +15,8 @@
     clippy::expl_impl_clone_on_copy,
     clippy::missing_const_for_fn,
     clippy::needless_return,
+    clippy::cast_possible_truncation,
+    unused_braces
 )]
 
 mod edge_cases;
@@ -56,12 +58,7 @@ mod quecto_vm {
         /// Creates a new VM with zeroed registers.
         #[hsrs::function]
         pub fn new() -> Self {
-            return {
-                Self {
-                    registers: [0, 0],
-                    clock: 0,
-                }
-            }
+            return { Self { registers: [0, 0], clock: 0 } }
         }
 
         /// Adds register `b` into register `a`.
@@ -109,10 +106,7 @@ mod quecto_vm {
         /// Returns registers 0 and 1 as a point.
         #[hsrs::function]
         pub fn snapshot(&self) -> Point {
-            Point {
-                x: self.registers[0] as i32,
-                y: self.registers[1] as i32,
-            }
+            Point { x: self.registers[0] as i32, y: self.registers[1] as i32 }
         }
 
         /// Divides register `a` by register `b`, returning error on division by zero.

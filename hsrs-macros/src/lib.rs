@@ -16,7 +16,7 @@
     clippy::unnecessary_wraps,
     clippy::expect_used,
     clippy::str_to_string,
-    clippy::implicit_clone,
+    clippy::implicit_clone
 )]
 
 mod enumeration;
@@ -28,9 +28,7 @@ pub fn enumeration(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    enumeration::expand(item.into())
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    enumeration::expand(item.into()).unwrap_or_else(|err| err.to_compile_error()).into()
 }
 
 #[proc_macro_attribute]
@@ -38,9 +36,7 @@ pub fn module(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    module::expand(attr.into(), item.into())
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    module::expand(attr.into(), item.into()).unwrap_or_else(|err| err.to_compile_error()).into()
 }
 
 #[proc_macro_attribute]
@@ -48,9 +44,7 @@ pub fn value_type(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    value_type::expand(item.into())
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    value_type::expand(item.into()).unwrap_or_else(|err| err.to_compile_error()).into()
 }
 
 #[proc_macro_attribute]

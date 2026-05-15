@@ -11,7 +11,7 @@
     clippy::indexing_slicing,
     clippy::shadow_reuse,
     clippy::shadow_same,
-    clippy::shadow_unrelated,
+    clippy::shadow_unrelated
 )]
 
 use hsrs_codegen::{haskell, parser};
@@ -62,10 +62,21 @@ fn minimal_module_round_trip() {
     assert!(hs.contains("newtype Counter = Counter (ForeignPtr CounterRaw)"));
 
     // Foreign imports
-    assert!(hs.contains("foreign import ccall safe \"counter_new\" c_counterNew :: IO (Ptr CounterRaw)"));
-    assert!(hs.contains("foreign import ccall safe \"counter_get\" c_counterGet :: Ptr CounterRaw -> IO Int64"));
-    assert!(hs.contains("foreign import ccall safe \"counter_increment\" c_counterIncrement :: Ptr CounterRaw -> IO ()"));
-    assert!(hs.contains("foreign import ccall \"&counter_free\" c_counterFree :: FinalizerPtr CounterRaw"));
+    assert!(
+        hs.contains(
+            "foreign import ccall safe \"counter_new\" c_counterNew :: IO (Ptr CounterRaw)"
+        )
+    );
+    assert!(hs.contains(
+        "foreign import ccall safe \"counter_get\" c_counterGet :: Ptr CounterRaw -> IO Int64"
+    ));
+    assert!(hs.contains(
+        "foreign import ccall safe \"counter_increment\" c_counterIncrement :: Ptr CounterRaw -> \
+         IO ()"
+    ));
+    assert!(hs.contains(
+        "foreign import ccall \"&counter_free\" c_counterFree :: FinalizerPtr CounterRaw"
+    ));
 
     // High-level wrappers
     assert!(hs.contains("new :: IO Counter"));
@@ -482,10 +493,16 @@ fn kitchen_sink_all_types() {
     assert!(output.contains("setName :: Engine -> Text -> IO ()"), "string param sig: {output}");
 
     // Result return with borsh param
-    assert!(output.contains("process :: Engine -> [Config] -> IO (Either Error Word64)"), "result return sig: {output}");
+    assert!(
+        output.contains("process :: Engine -> [Config] -> IO (Either Error Word64)"),
+        "result return sig: {output}"
+    );
 
     // Option return
-    assert!(output.contains("find :: Engine -> Word64 -> IO (Maybe Config)"), "option return sig: {output}");
+    assert!(
+        output.contains("find :: Engine -> Word64 -> IO (Maybe Config)"),
+        "option return sig: {output}"
+    );
 }
 
 #[test]
@@ -580,5 +597,8 @@ fn custom_module_name_in_output() {
     "#;
     let output = source_to_haskell_with_module(src, "MyApp.FFI.Bindings");
     assert!(output.contains("module MyApp.FFI.Bindings where"), "custom module name: {output}");
-    assert!(!output.contains("module Bindings where"), "should not contain default module name: {output}");
+    assert!(
+        !output.contains("module Bindings where"),
+        "should not contain default module name: {output}"
+    );
 }

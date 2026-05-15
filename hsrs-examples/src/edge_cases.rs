@@ -10,6 +10,7 @@
     clippy::no_effect_underscore_binding,
     clippy::new_without_default,
     clippy::must_use_candidate,
+    clippy::needless_pass_by_ref_mut
 )]
 
 // --- Enum edge cases ---

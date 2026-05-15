@@ -11,7 +11,7 @@
     clippy::indexing_slicing,
     clippy::shadow_reuse,
     clippy::shadow_same,
-    clippy::shadow_unrelated,
+    clippy::shadow_unrelated
 )]
 
 use std::process::Command;
@@ -29,10 +29,7 @@ fn no_args_prints_usage_and_exits_1() {
 
 #[test]
 fn missing_file_prints_error() {
-    let output = hsrs_codegen()
-        .arg("nonexistent.rs")
-        .output()
-        .unwrap();
+    let output = hsrs_codegen().arg("nonexistent.rs").output().unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Error:"));
 }
@@ -41,15 +38,16 @@ fn missing_file_prints_error() {
 fn stdout_output_generates_haskell() {
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("test.rs");
-    std::fs::write(&src, r#"
+    std::fs::write(
+        &src,
+        r#"
         #[hsrs::enumeration]
         pub enum Dir { Up, Down }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
-    let output = hsrs_codegen()
-        .arg(src.to_str().unwrap())
-        .output()
-        .unwrap();
+    let output = hsrs_codegen().arg(src.to_str().unwrap()).output().unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("newtype Dir"));
@@ -60,10 +58,14 @@ fn file_output_writes_haskell() {
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("test.rs");
     let out = dir.path().join("Out.hs");
-    std::fs::write(&src, r#"
+    std::fs::write(
+        &src,
+        r#"
         #[hsrs::enumeration]
         pub enum Dir { Up, Down }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let status = hsrs_codegen()
         .arg(src.to_str().unwrap())
@@ -80,10 +82,14 @@ fn file_output_writes_haskell() {
 fn module_flag_sets_module_name() {
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("test.rs");
-    std::fs::write(&src, r#"
+    std::fs::write(
+        &src,
+        r#"
         #[hsrs::enumeration]
         pub enum Dir { Up, Down }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let output = hsrs_codegen()
         .arg(src.to_str().unwrap())
@@ -100,12 +106,18 @@ fn module_flag_sets_module_name() {
 fn multi_file_merges_types() {
     let dir = tempfile::tempdir().unwrap();
     let types = dir.path().join("types.rs");
-    std::fs::write(&types, r#"
+    std::fs::write(
+        &types,
+        r#"
         #[hsrs::enumeration]
         pub enum Dir { Up, Down }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let module = dir.path().join("module.rs");
-    std::fs::write(&module, r#"
+    std::fs::write(
+        &module,
+        r#"
         #[hsrs::module]
         mod canvas {
             #[hsrs::data_type]
@@ -115,13 +127,12 @@ fn multi_file_merges_types() {
                 pub fn dir(&self) -> Dir {}
             }
         }
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
-    let output = hsrs_codegen()
-        .arg(types.to_str().unwrap())
-        .arg(module.to_str().unwrap())
-        .output()
-        .unwrap();
+    let output =
+        hsrs_codegen().arg(types.to_str().unwrap()).arg(module.to_str().unwrap()).output().unwrap();
     assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("newtype Dir"));

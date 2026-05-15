@@ -1,9 +1,19 @@
-use crate::ir::{
-    FfiEnum, FfiField, FfiFunction, FfiFunctionKind, FfiModule, FfiParam, FfiSafety, FfiType,
-    FfiValueType, ParsedFile,
-};
 use std::path::Path;
+
 use syn::{Fields, FnArg, ImplItem, Item, Pat, ReturnType, Type};
+
+use crate::ir::{
+    FfiEnum,
+    FfiField,
+    FfiFunction,
+    FfiFunctionKind,
+    FfiModule,
+    FfiParam,
+    FfiSafety,
+    FfiType,
+    FfiValueType,
+    ParsedFile,
+};
 
 pub fn parse_file(path: &Path) -> Result<ParsedFile, String> {
     let source = std::fs::read_to_string(path)
@@ -26,11 +36,11 @@ pub fn parse_sources(sources: &[&str]) -> Result<ParsedFile, String> {
             match item {
                 Item::Enum(e) if has_hsrs_attr(&e.attrs, "enumeration") => {
                     all_enums.push(parse_enum(e)?);
-                }
+                },
                 Item::Struct(s) if has_hsrs_attr(&s.attrs, "value_type") => {
                     all_value_types.push(parse_value_type(s, &all_enums, &all_value_types)?);
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
     }
@@ -45,19 +55,14 @@ pub fn parse_sources(sources: &[&str]) -> Result<ParsedFile, String> {
         }
     }
 
-    Ok(ParsedFile {
-        enums: all_enums,
-        modules: all_modules,
-        value_types: all_value_types,
-    })
+    Ok(ParsedFile { enums: all_enums, modules: all_modules, value_types: all_value_types })
 }
 
 pub fn parse_files(paths: &[&Path]) -> Result<ParsedFile, String> {
     let sources: Vec<String> = paths
         .iter()
         .map(|p| {
-            std::fs::read_to_string(p)
-                .map_err(|e| format!("failed to read {}: {e}", p.display()))
+            std::fs::read_to_string(p).map_err(|e| format!("failed to read {}: {e}", p.display()))
         })
         .collect::<Result<_, _>>()?;
     let refs: Vec<&str> = sources.iter().map(String::as_str).collect();
@@ -70,12 +75,7 @@ pub fn parse_str(source: &str) -> Result<ParsedFile, String> {
 
 fn has_hsrs_attr(attrs: &[syn::Attribute], name: &str) -> bool {
     attrs.iter().any(|attr| {
-        let segs: Vec<_> = attr
-            .path()
-            .segments
-            .iter()
-            .map(|s| s.ident.to_string())
-            .collect();
+        let segs: Vec<_> = attr.path().segments.iter().map(|s| s.ident.to_string()).collect();
         segs == vec!["hsrs", name]
     })
 }
@@ -114,7 +114,7 @@ fn extract_derives(attrs: &[syn::Attribute]) -> (bool, bool, bool) {
                             "PartialEq" | "Eq" => has_eq = true,
                             "Debug" | "Display" => has_show = true,
                             "PartialOrd" | "Ord" => has_ord = true,
-                            _ => {}
+                            _ => {},
                         }
                     }
                 }
@@ -155,39 +155,21 @@ fn parse_value_type(
     let mut fields = Vec::new();
     if let Fields::Named(named) = &s.fields {
         for f in &named.named {
-            let field_name = f
-                .ident
-                .as_ref()
-                .ok_or_else(|| format!("unnamed field in {name}"))?
-                .to_string();
+            let field_name =
+                f.ident.as_ref().ok_or_else(|| format!("unnamed field in {name}"))?.to_string();
             let ty = resolve_type(&f.ty, known_enums, known_value_types)?;
-            fields.push(FfiField {
-                name: field_name,
-                ty,
-            });
+            fields.push(FfiField { name: field_name, ty });
         }
     } else {
         return Err(format!("value_type {name} must have named fields"));
     }
 
-    Ok(FfiValueType {
-        name,
-        fields,
-        has_eq,
-        has_show,
-        has_ord,
-        docs: extract_docs(&s.attrs),
-    })
+    Ok(FfiValueType { name, fields, has_eq, has_show, has_ord, docs: extract_docs(&s.attrs) })
 }
 
 fn extract_function_safety(attrs: &[syn::Attribute]) -> Option<FfiSafety> {
     for attr in attrs {
-        let segs: Vec<_> = attr
-            .path()
-            .segments
-            .iter()
-            .map(|s| s.ident.to_string())
-            .collect();
+        let segs: Vec<_> = attr.path().segments.iter().map(|s| s.ident.to_string()).collect();
         if segs == vec!["hsrs", "function"] {
             if let syn::Meta::List(list) = &attr.meta {
                 let token_str = list.tokens.to_string();
@@ -208,12 +190,7 @@ fn extract_function_safety(attrs: &[syn::Attribute]) -> Option<FfiSafety> {
 
 fn extract_module_safety(attrs: &[syn::Attribute]) -> FfiSafety {
     for attr in attrs {
-        let segs: Vec<_> = attr
-            .path()
-            .segments
-            .iter()
-            .map(|s| s.ident.to_string())
-            .collect();
+        let segs: Vec<_> = attr.path().segments.iter().map(|s| s.ident.to_string()).collect();
         if segs == vec!["hsrs", "module"] {
             if let syn::Meta::List(list) = &attr.meta {
                 let token_str = list.tokens.to_string();
@@ -270,10 +247,7 @@ fn parse_module(
 ) -> Result<FfiModule, String> {
     let mod_name = m.ident.to_string();
     let default_safety = extract_module_safety(&m.attrs);
-    let content = m
-        .content
-        .as_ref()
-        .ok_or_else(|| format!("module {mod_name} must be inline"))?;
+    let content = m.content.as_ref().ok_or_else(|| format!("module {mod_name} must be inline"))?;
 
     let data_struct = content
         .1
@@ -309,7 +283,13 @@ fn parse_module(
     for item in &impl_block.items {
         if let ImplItem::Fn(method) = item {
             if has_hsrs_attr(&method.attrs, "function") {
-                functions.push(parse_function(method, &mod_name, &default_safety, known_enums, known_value_types)?);
+                functions.push(parse_function(
+                    method,
+                    &mod_name,
+                    &default_safety,
+                    known_enums,
+                    known_value_types,
+                )?);
             }
         }
     }
@@ -326,18 +306,17 @@ fn parse_module(
         borsh_params: vec![],
     });
 
-    Ok(FfiModule {
-        name: mod_name,
-        struct_name,
-        functions,
-        docs: extract_docs(&m.attrs),
-    })
+    Ok(FfiModule { name: mod_name, struct_name, functions, docs: extract_docs(&m.attrs) })
 }
 
 fn is_borsh_type(ty: &FfiType) -> bool {
     matches!(
         ty,
-        FfiType::ValueType(_) | FfiType::Result(_, _) | FfiType::Option(_) | FfiType::String | FfiType::Vec(_)
+        FfiType::ValueType(_)
+            | FfiType::Result(_, _)
+            | FfiType::Option(_)
+            | FfiType::String
+            | FfiType::Vec(_)
     )
 }
 
@@ -377,20 +356,13 @@ fn parse_function(
         ReturnType::Default => None,
         ReturnType::Type(_, ty) => {
             let resolved = resolve_type(ty, known_enums, known_value_types)?;
-            if matches!(resolved, FfiType::Unit) {
-                None
-            } else {
-                Some(resolved)
-            }
-        }
+            if matches!(resolved, FfiType::Unit) { None } else { Some(resolved) }
+        },
     };
 
     let borsh_return = return_type.as_ref().is_some_and(is_borsh_type);
-    let borsh_params: Vec<String> = params
-        .iter()
-        .filter(|p| is_borsh_type(&p.ty))
-        .map(|p| p.name.clone())
-        .collect();
+    let borsh_params: Vec<String> =
+        params.iter().filter(|p| is_borsh_type(&p.ty)).map(|p| p.name.clone()).collect();
 
     Ok(FfiFunction {
         rust_name: name,
@@ -436,7 +408,7 @@ fn resolve_type(
                         } else {
                             Err(format!("unknown type: {other}"))
                         }
-                    }
+                    },
                 };
             }
             if let Some(seg) = tp.path.segments.last() {
@@ -446,11 +418,7 @@ fn resolve_type(
                         .args
                         .iter()
                         .filter_map(|a| {
-                            if let syn::GenericArgument::Type(ty) = a {
-                                Some(ty)
-                            } else {
-                                None
-                            }
+                            if let syn::GenericArgument::Type(ty) = a { Some(ty) } else { None }
                         })
                         .collect();
                     match name.as_str() {
@@ -458,38 +426,31 @@ fn resolve_type(
                             if type_args.len() != 2 {
                                 return Err("Result requires exactly 2 type arguments".to_owned());
                             }
-                            let ok_ty =
-                                resolve_type(type_args[0], known_enums, known_value_types)?;
+                            let ok_ty = resolve_type(type_args[0], known_enums, known_value_types)?;
                             let err_ty =
                                 resolve_type(type_args[1], known_enums, known_value_types)?;
                             return Ok(FfiType::Result(Box::new(ok_ty), Box::new(err_ty)));
-                        }
+                        },
                         "Option" => {
                             if type_args.len() != 1 {
-                                return Err(
-                                    "Option requires exactly 1 type argument".to_owned()
-                                );
+                                return Err("Option requires exactly 1 type argument".to_owned());
                             }
-                            let inner =
-                                resolve_type(type_args[0], known_enums, known_value_types)?;
+                            let inner = resolve_type(type_args[0], known_enums, known_value_types)?;
                             return Ok(FfiType::Option(Box::new(inner)));
-                        }
+                        },
                         "Vec" => {
                             if type_args.len() != 1 {
-                                return Err(
-                                    "Vec requires exactly 1 type argument".to_owned()
-                                );
+                                return Err("Vec requires exactly 1 type argument".to_owned());
                             }
-                            let inner =
-                                resolve_type(type_args[0], known_enums, known_value_types)?;
+                            let inner = resolve_type(type_args[0], known_enums, known_value_types)?;
                             return Ok(FfiType::Vec(Box::new(inner)));
-                        }
+                        },
                         _ => return Err(format!("unsupported generic type: {name}")),
                     }
                 }
             }
             Err("qualified types not supported".to_owned())
-        }
+        },
         Type::Tuple(tt) if tt.elems.is_empty() => Ok(FfiType::Unit),
         _ => Err("unsupported type syntax".to_owned()),
     }
@@ -1131,9 +1092,8 @@ mod tests {
         "#;
         let parsed = parse_source(src);
         let fns = &parsed.modules[0].functions;
-        let non_destructor: Vec<_> = fns.iter()
-            .filter(|f| !matches!(f.kind, FfiFunctionKind::Destructor))
-            .collect();
+        let non_destructor: Vec<_> =
+            fns.iter().filter(|f| !matches!(f.kind, FfiFunctionKind::Destructor)).collect();
         assert_eq!(non_destructor.len(), 1);
         assert_eq!(non_destructor[0].rust_name, "public_fn");
     }
@@ -1180,10 +1140,9 @@ mod tests {
         let result = parse_str(src);
         match result {
             Ok(_) => panic!("expected parse error containing {needle:?}, but got Ok"),
-            Err(e) => assert!(
-                e.contains(needle),
-                "expected error containing {needle:?}, got: {e:?}"
-            ),
+            Err(e) => {
+                assert!(e.contains(needle), "expected error containing {needle:?}, got: {e:?}")
+            },
         }
     }
 
@@ -1393,7 +1352,8 @@ mod tests {
 
     #[test]
     fn resolves_string_type() {
-        let parsed = parse_source(r#"
+        let parsed = parse_source(
+            r#"
             #[hsrs::module]
             mod m {
                 #[hsrs::data_type]
@@ -1403,7 +1363,8 @@ mod tests {
                     pub fn name(&self) -> String {}
                 }
             }
-        "#);
+        "#,
+        );
         let f = &parsed.modules[0].functions[0];
         assert!(matches!(f.return_type, Some(FfiType::String)));
         assert!(f.borsh_return);
@@ -1411,7 +1372,8 @@ mod tests {
 
     #[test]
     fn string_param_is_borsh() {
-        let parsed = parse_source(r#"
+        let parsed = parse_source(
+            r#"
             #[hsrs::module]
             mod m {
                 #[hsrs::data_type]
@@ -1421,14 +1383,16 @@ mod tests {
                     pub fn set_name(&mut self, name: String) {}
                 }
             }
-        "#);
+        "#,
+        );
         let f = &parsed.modules[0].functions[0];
         assert_eq!(f.borsh_params, vec!["name"]);
     }
 
     #[test]
     fn resolves_vec_type() {
-        let parsed = parse_source(r#"
+        let parsed = parse_source(
+            r#"
             #[hsrs::module]
             mod m {
                 #[hsrs::data_type]
@@ -1438,7 +1402,8 @@ mod tests {
                     pub fn items(&self) -> Vec<i32> {}
                 }
             }
-        "#);
+        "#,
+        );
         let f = &parsed.modules[0].functions[0];
         assert!(matches!(f.return_type, Some(FfiType::Vec(_))));
         assert!(f.borsh_return);
@@ -1446,7 +1411,8 @@ mod tests {
 
     #[test]
     fn vec_param_is_borsh() {
-        let parsed = parse_source(r#"
+        let parsed = parse_source(
+            r#"
             #[hsrs::module]
             mod m {
                 #[hsrs::data_type]
@@ -1456,14 +1422,16 @@ mod tests {
                     pub fn add_items(&mut self, items: Vec<i32>) {}
                 }
             }
-        "#);
+        "#,
+        );
         let f = &parsed.modules[0].functions[0];
         assert_eq!(f.borsh_params, vec!["items"]);
     }
 
     #[test]
     fn vec_of_value_type() {
-        let parsed = parse_source(r#"
+        let parsed = parse_source(
+            r#"
             #[hsrs::value_type]
             pub struct Point { pub x: i32, pub y: i32 }
 
@@ -1476,17 +1444,21 @@ mod tests {
                     pub fn points(&self) -> Vec<Point> {}
                 }
             }
-        "#);
+        "#,
+        );
         let f = &parsed.modules[0].functions[0];
         match &f.return_type {
-            Some(FfiType::Vec(inner)) => assert!(matches!(**inner, FfiType::ValueType(ref n) if n == "Point")),
+            Some(FfiType::Vec(inner)) => {
+                assert!(matches!(**inner, FfiType::ValueType(ref n) if n == "Point"))
+            },
             _ => panic!("expected Vec(ValueType(Point))"),
         }
     }
 
     #[test]
     fn error_on_vec_wrong_arity() {
-        assert_parse_err(r#"
+        assert_parse_err(
+            r#"
             #[hsrs::module]
             mod m {
                 #[hsrs::data_type]
@@ -1496,7 +1468,9 @@ mod tests {
                     pub fn f(&self) -> Vec<i32, i32> {}
                 }
             }
-        "#, "Vec requires exactly 1 type argument");
+        "#,
+            "Vec requires exactly 1 type argument",
+        );
     }
 
     #[test]

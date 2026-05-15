@@ -2,9 +2,18 @@ use std::collections::HashSet;
 
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
-use syn::ext::IdentExt;
-use syn::parse::{Parse, ParseStream};
-use syn::{FnArg, ImplItem, ImplItemFn, Item, ItemMod, Pat, ReturnType, Type};
+use syn::{
+    FnArg,
+    ImplItem,
+    ImplItemFn,
+    Item,
+    ItemMod,
+    Pat,
+    ReturnType,
+    Type,
+    ext::IdentExt,
+    parse::{Parse, ParseStream},
+};
 
 struct ModuleAttr {
     value_type_names: HashSet<String>,
@@ -19,23 +28,22 @@ impl Parse for ModuleAttr {
                 "value_types" => {
                     let content;
                     syn::parenthesized!(content in input);
-                    let names =
-                        content.parse_terminated(Ident::parse, syn::Token![,])?;
+                    let names = content.parse_terminated(Ident::parse, syn::Token![,])?;
                     for name in names {
                         value_type_names.insert(name.to_string());
                     }
-                }
+                },
                 "safety" => {
                     let _: syn::Token![=] = input.parse()?;
                     let _safety_value: Ident = input.call(Ident::parse_any)?;
                     // Consumed and discarded — codegen reads this from source
-                }
+                },
                 other => {
                     return Err(syn::Error::new_spanned(
                         ident,
                         format!("unknown module attribute: `{other}`"),
                     ));
-                }
+                },
             }
             if !input.is_empty() {
                 let _: syn::Token![,] = input.parse()?;
@@ -54,10 +62,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let mod_name = input.ident.clone();
 
     if input.content.is_none() {
-        return Err(syn::Error::new_spanned(
-            &input,
-            "hsrs::module requires an inline module",
-        ));
+        return Err(syn::Error::new_spanned(&input, "hsrs::module requires an inline module"));
     }
     let content = input.content.as_mut().expect("checked above");
     let items = &mut content.1;
@@ -72,8 +77,7 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     let struct_ident = find_data_type_struct(items)?;
     process_struct(items, &struct_ident)?;
-    let ffi_wrappers =
-        generate_ffi_from_impl(items, &mod_name, &struct_ident, &value_type_names)?;
+    let ffi_wrappers = generate_ffi_from_impl(items, &mod_name, &struct_ident, &value_type_names)?;
 
     let free_name = format_ident!("{mod_name}_free");
     let destructor: Item = syn::parse_quote! {
@@ -142,10 +146,7 @@ fn process_struct(items: &mut [Item], struct_ident: &Ident) -> syn::Result<()> {
             }
         }
     }
-    Err(syn::Error::new(
-        proc_macro2::Span::call_site(),
-        "data_type struct not found",
-    ))
+    Err(syn::Error::new(proc_macro2::Span::call_site(), "data_type struct not found"))
 }
 
 fn generate_ffi_from_impl(
@@ -214,11 +215,7 @@ fn is_primitive_type(ty: &Type) -> bool {
 }
 
 fn is_self_type(ty: &Type) -> bool {
-    if let Type::Path(tp) = ty {
-        tp.path.is_ident("Self")
-    } else {
-        false
-    }
+    if let Type::Path(tp) = ty { tp.path.is_ident("Self") } else { false }
 }
 
 fn needs_borsh(ty: &Type, value_type_names: &HashSet<String>) -> bool {
@@ -250,10 +247,7 @@ struct FfiParams {
     call_tokens: Vec<TokenStream>,
 }
 
-fn build_ffi_params(
-    method: &ImplItemFn,
-    value_type_names: &HashSet<String>,
-) -> FfiParams {
+fn build_ffi_params(method: &ImplItemFn, value_type_names: &HashSet<String>) -> FfiParams {
     let mut sig_tokens = Vec::new();
     let mut call_tokens = Vec::new();
 
@@ -270,7 +264,7 @@ fn build_ffi_params(
                     call_tokens.push(quote! {
                         {
                             #[allow(unsafe_code)]
-                            let #name: #ty = ::hsrs::borsh_deserialize(#ptr_name, #len_name);
+                            let #name: #ty = unsafe { ::hsrs::borsh_deserialize(#ptr_name, #len_name) };
                             #name
                         }
                     });
@@ -337,20 +331,24 @@ fn generate_wrapper(
             })
         } else {
             match &method.sig.output {
-                ReturnType::Default => Ok(syn::parse_quote! {
-                    #[allow(clippy::missing_docs_in_private_items)]
-                    #[::safer_ffi::ffi_export]
-                    fn #ffi_name(this: &mut #struct_ident, #(#ffi_params),*) {
-                        this.#method_name(#(#call_args),*);
-                    }
-                }),
-                ReturnType::Type(_, ret_ty) => Ok(syn::parse_quote! {
-                    #[allow(clippy::missing_docs_in_private_items)]
-                    #[::safer_ffi::ffi_export]
-                    fn #ffi_name(this: &mut #struct_ident, #(#ffi_params),*) -> #ret_ty {
-                        this.#method_name(#(#call_args),*)
-                    }
-                }),
+                ReturnType::Default => {
+                    Ok(syn::parse_quote! {
+                        #[allow(clippy::missing_docs_in_private_items)]
+                        #[::safer_ffi::ffi_export]
+                        fn #ffi_name(this: &mut #struct_ident, #(#ffi_params),*) {
+                            this.#method_name(#(#call_args),*);
+                        }
+                    })
+                },
+                ReturnType::Type(_, ret_ty) => {
+                    Ok(syn::parse_quote! {
+                        #[allow(clippy::missing_docs_in_private_items)]
+                        #[::safer_ffi::ffi_export]
+                        fn #ffi_name(this: &mut #struct_ident, #(#ffi_params),*) -> #ret_ty {
+                            this.#method_name(#(#call_args),*)
+                        }
+                    })
+                },
             }
         }
     } else if borsh_return {
@@ -364,20 +362,24 @@ fn generate_wrapper(
         })
     } else {
         match &method.sig.output {
-            ReturnType::Default => Ok(syn::parse_quote! {
-                #[allow(clippy::missing_docs_in_private_items)]
-                #[::safer_ffi::ffi_export]
-                fn #ffi_name(this: &#struct_ident, #(#ffi_params),*) {
-                    this.#method_name(#(#call_args),*);
-                }
-            }),
-            ReturnType::Type(_, ret_ty) => Ok(syn::parse_quote! {
-                #[allow(clippy::missing_docs_in_private_items)]
-                #[::safer_ffi::ffi_export]
-                fn #ffi_name(this: &#struct_ident, #(#ffi_params),*) -> #ret_ty {
-                    this.#method_name(#(#call_args),*)
-                }
-            }),
+            ReturnType::Default => {
+                Ok(syn::parse_quote! {
+                    #[allow(clippy::missing_docs_in_private_items)]
+                    #[::safer_ffi::ffi_export]
+                    fn #ffi_name(this: &#struct_ident, #(#ffi_params),*) {
+                        this.#method_name(#(#call_args),*);
+                    }
+                })
+            },
+            ReturnType::Type(_, ret_ty) => {
+                Ok(syn::parse_quote! {
+                    #[allow(clippy::missing_docs_in_private_items)]
+                    #[::safer_ffi::ffi_export]
+                    fn #ffi_name(this: &#struct_ident, #(#ffi_params),*) -> #ret_ty {
+                        this.#method_name(#(#call_args),*)
+                    }
+                })
+            },
         }
     }
 }
@@ -387,27 +389,15 @@ fn has_hsrs_attr(attrs: &[syn::Attribute], name: &str) -> bool {
 }
 
 fn is_hsrs_path(attr: &syn::Attribute, name: &str) -> bool {
-    let segs: Vec<_> = attr
-        .path()
-        .segments
-        .iter()
-        .map(|s| s.ident.to_string())
-        .collect();
+    let segs: Vec<_> = attr.path().segments.iter().map(|s| s.ident.to_string()).collect();
     segs == vec!["hsrs", name]
 }
 
-fn non_self_params(
-    inputs: &syn::punctuated::Punctuated<FnArg, syn::Token![,]>,
-) -> Vec<&FnArg> {
-    inputs
-        .iter()
-        .filter(|a| !matches!(a, FnArg::Receiver(_)))
-        .collect()
+fn non_self_params(inputs: &syn::punctuated::Punctuated<FnArg, syn::Token![,]>) -> Vec<&FnArg> {
+    inputs.iter().filter(|a| !matches!(a, FnArg::Receiver(_))).collect()
 }
 
-fn param_idents(
-    inputs: &syn::punctuated::Punctuated<FnArg, syn::Token![,]>,
-) -> Vec<&Ident> {
+fn param_idents(inputs: &syn::punctuated::Punctuated<FnArg, syn::Token![,]>) -> Vec<&Ident> {
     inputs
         .iter()
         .filter_map(|arg| {

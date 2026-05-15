@@ -24,7 +24,7 @@
     clippy::arithmetic_side_effects,
     clippy::shadow_reuse,
     clippy::shadow_same,
-    clippy::shadow_unrelated,
+    clippy::shadow_unrelated
 )]
 
 pub mod haskell;

@@ -24,11 +24,12 @@
     clippy::arithmetic_side_effects,
     clippy::shadow_reuse,
     clippy::shadow_same,
-    clippy::shadow_unrelated,
+    clippy::shadow_unrelated
 )]
 
-use hsrs_codegen::{haskell, parser};
 use std::path::{Path, PathBuf};
+
+use hsrs_codegen::{haskell, parser};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -50,7 +51,7 @@ fn main() {
                     eprintln!("--module value must not be empty");
                     std::process::exit(1);
                 }
-            }
+            },
             "-o" => {
                 i += 1;
                 if i >= args.len() {
@@ -58,14 +59,14 @@ fn main() {
                     std::process::exit(1);
                 }
                 output_file = Some(args[i].clone());
-            }
+            },
             arg if !arg.starts_with('-') => {
                 source_files.push(arg.to_owned());
-            }
+            },
             other => {
                 eprintln!("unknown flag: {other}");
                 std::process::exit(1);
-            }
+            },
         }
         i += 1;
     }
@@ -82,7 +83,7 @@ fn main() {
         Err(e) => {
             eprintln!("Error: {e}");
             std::process::exit(1);
-        }
+        },
     };
 
     let output = haskell::generate(&parsed, &module_name);

@@ -1,7 +1,15 @@
-use crate::ir::{
-    FfiEnum, FfiFunction, FfiFunctionKind, FfiModule, FfiSafety, FfiType, FfiValueType, ParsedFile,
-};
 use heck::{ToLowerCamelCase, ToUpperCamelCase};
+
+use crate::ir::{
+    FfiEnum,
+    FfiFunction,
+    FfiFunctionKind,
+    FfiModule,
+    FfiSafety,
+    FfiType,
+    FfiValueType,
+    ParsedFile,
+};
 
 pub fn generate(parsed: &ParsedFile, module_name: &str) -> String {
     let mut out = String::new();
@@ -10,11 +18,10 @@ pub fn generate(parsed: &ParsedFile, module_name: &str) -> String {
     out.push_str("{-# LANGUAGE GeneralizedNewtypeDeriving #-}\n");
 
     let has_value_types = !parsed.value_types.is_empty();
-    let has_borsh_functions = parsed.modules.iter().any(|m| {
-        m.functions
-            .iter()
-            .any(|f| f.borsh_return || !f.borsh_params.is_empty())
-    });
+    let has_borsh_functions = parsed
+        .modules
+        .iter()
+        .any(|m| m.functions.iter().any(|f| f.borsh_return || !f.borsh_params.is_empty()));
 
     if has_value_types {
         out.push_str("{-# LANGUAGE DeriveGeneric #-}\n");
@@ -78,9 +85,7 @@ fn generate_enum(out: &mut String, e: &FfiEnum, with_borsh: bool) {
         derives.join(", ")
     ));
     if with_borsh {
-        out.push_str(&format!(
-            "  deriving (BorshSize, ToBorsh, FromBorsh) via Word8\n"
-        ));
+        out.push_str(&format!("  deriving (BorshSize, ToBorsh, FromBorsh) via Word8\n"));
     }
     out.push('\n');
     for (i, variant) in e.variants.iter().enumerate() {
@@ -128,10 +133,7 @@ fn generate_module(out: &mut String, m: &FfiModule) {
 
     emit_haddock(out, &m.docs);
     out.push_str(&format!("data {raw}\n\n"));
-    out.push_str(&format!(
-        "newtype {} = {} (ForeignPtr {raw})\n\n",
-        m.struct_name, m.struct_name
-    ));
+    out.push_str(&format!("newtype {} = {} (ForeignPtr {raw})\n\n", m.struct_name, m.struct_name));
 
     for f in &m.functions {
         generate_foreign_import(out, f, &raw);
@@ -154,28 +156,39 @@ fn generate_foreign_import(out: &mut String, f: &FfiFunction, raw: &str) {
                 "foreign import ccall \"&{}\" c_{} :: FinalizerPtr {}\n",
                 f.c_name, hs, raw
             ));
-        }
+        },
         FfiFunctionKind::Constructor if f.borsh_return => {
             let params = ffi_param_types(f);
             out.push_str(&format!(
                 "foreign import ccall {}\"{}\" c_{} :: {}IO (Ptr BorshBufferRaw)\n",
-                safety_keyword(&f.safety), f.c_name, hs, params
+                safety_keyword(&f.safety),
+                f.c_name,
+                hs,
+                params
             ));
-        }
+        },
         FfiFunctionKind::Constructor => {
             let params = ffi_param_types(f);
             out.push_str(&format!(
                 "foreign import ccall {}\"{}\" c_{} :: {}IO (Ptr {})\n",
-                safety_keyword(&f.safety), f.c_name, hs, params, raw
+                safety_keyword(&f.safety),
+                f.c_name,
+                hs,
+                params,
+                raw
             ));
-        }
+        },
         FfiFunctionKind::MutMethod | FfiFunctionKind::RefMethod if f.borsh_return => {
             let params = ffi_param_types(f);
             out.push_str(&format!(
                 "foreign import ccall {}\"{}\" c_{} :: Ptr {} -> {}IO (Ptr BorshBufferRaw)\n",
-                safety_keyword(&f.safety), f.c_name, hs, raw, params
+                safety_keyword(&f.safety),
+                f.c_name,
+                hs,
+                raw,
+                params
             ));
-        }
+        },
         FfiFunctionKind::MutMethod | FfiFunctionKind::RefMethod => {
             let params = ffi_param_types(f);
             let ret = match &f.return_type {
@@ -184,9 +197,14 @@ fn generate_foreign_import(out: &mut String, f: &FfiFunction, raw: &str) {
             };
             out.push_str(&format!(
                 "foreign import ccall {}\"{}\" c_{} :: Ptr {} -> {}{}\n",
-                safety_keyword(&f.safety), f.c_name, hs, raw, params, ret
+                safety_keyword(&f.safety),
+                f.c_name,
+                hs,
+                raw,
+                params,
+                ret
             ));
-        }
+        },
     }
 }
 
@@ -210,11 +228,8 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
 
     match f.kind {
         FfiFunctionKind::Constructor if f.borsh_return => {
-            let sig_params = f
-                .params
-                .iter()
-                .map(|p| format!("{} -> ", hl_type(&p.ty)))
-                .collect::<String>();
+            let sig_params =
+                f.params.iter().map(|p| format!("{} -> ", hl_type(&p.ty))).collect::<String>();
             let ret = hl_type(f.return_type.as_ref().expect("borsh_return implies return type"));
 
             out.push('\n');
@@ -222,30 +237,20 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
             out.push_str(&format!("{} :: {}IO {}\n", hs_fn, sig_params, ret));
 
             let pnames: Vec<_> = f.params.iter().map(|p| p.name.to_lower_camel_case()).collect();
-            let plist = if pnames.is_empty() {
-                String::new()
-            } else {
-                format!(" {}", pnames.join(" "))
-            };
+            let plist =
+                if pnames.is_empty() { String::new() } else { format!(" {}", pnames.join(" ")) };
 
             out.push_str(&format!("{}{} =\n", hs_fn, plist));
             let call = format!("c_{}", hs_c);
-            let full_call =
-                build_borsh_call(f, &call, None);
+            let full_call = build_borsh_call(f, &call, None);
             out.push_str(&format!("  fromBorshBuffer =<< {}\n", full_call));
-        }
+        },
         FfiFunctionKind::Constructor => {
-            let sig_params = f
-                .params
-                .iter()
-                .map(|p| format!("{} -> ", hl_type(&p.ty)))
-                .collect::<String>();
+            let sig_params =
+                f.params.iter().map(|p| format!("{} -> ", hl_type(&p.ty))).collect::<String>();
             out.push('\n');
             emit_haddock(out, &f.docs);
-            out.push_str(&format!(
-                "{} :: {}IO {}\n",
-                hs_fn, sig_params, struct_name
-            ));
+            out.push_str(&format!("{} :: {}IO {}\n", hs_fn, sig_params, struct_name));
 
             let pnames: Vec<_> = f.params.iter().map(|p| p.name.to_lower_camel_case()).collect();
 
@@ -262,7 +267,8 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
                     .collect::<Vec<_>>()
                     .join(" ");
                 out.push_str(&format!(
-                    "{} {} = do\n  ptr <- c_{} {}\n  fp <- newForeignPtr c_{} ptr\n  pure ({} fp)\n",
+                    "{} {} = do\n  ptr <- c_{} {}\n  fp <- newForeignPtr c_{} ptr\n  pure ({} \
+                     fp)\n",
                     hs_fn,
                     pnames.join(" "),
                     hs_c,
@@ -290,7 +296,10 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
                 for (name, ptr_var, len_var) in &borsh_wraps {
                     out.push_str(&format!(
                         "{}withBorshArg {} $ \\{} {} ->\n",
-                        " ".repeat(indent), name, ptr_var, len_var
+                        " ".repeat(indent),
+                        name,
+                        ptr_var,
+                        len_var
                     ));
                     indent = indent.saturating_add(2);
                 }
@@ -300,28 +309,19 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
                 out.push_str(&format!("{}  fp <- newForeignPtr c_{} ptr\n", ind, free_hs));
                 out.push_str(&format!("{}  pure ({} fp)\n", ind, struct_name));
             }
-        }
+        },
         FfiFunctionKind::MutMethod | FfiFunctionKind::RefMethod if f.borsh_return => {
-            let sig_params = f
-                .params
-                .iter()
-                .map(|p| format!("{} -> ", hl_type(&p.ty)))
-                .collect::<String>();
+            let sig_params =
+                f.params.iter().map(|p| format!("{} -> ", hl_type(&p.ty))).collect::<String>();
             let ret = hl_type(f.return_type.as_ref().expect("borsh_return implies return type"));
 
             out.push('\n');
             emit_haddock(out, &f.docs);
-            out.push_str(&format!(
-                "{} :: {} -> {}IO {}\n",
-                hs_fn, struct_name, sig_params, ret
-            ));
+            out.push_str(&format!("{} :: {} -> {}IO {}\n", hs_fn, struct_name, sig_params, ret));
 
             let pnames: Vec<_> = f.params.iter().map(|p| p.name.to_lower_camel_case()).collect();
-            let plist = if pnames.is_empty() {
-                String::new()
-            } else {
-                format!(" {}", pnames.join(" "))
-            };
+            let plist =
+                if pnames.is_empty() { String::new() } else { format!(" {}", pnames.join(" ")) };
 
             out.push_str(&format!(
                 "{} ({} fp){} = withForeignPtr fp $ \\ptr ->\n",
@@ -330,30 +330,21 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
             let call = format!("c_{}", hs_c);
             let full_call = build_borsh_call(f, &call, Some("ptr"));
             out.push_str(&format!("  fromBorshBuffer =<< {}\n", full_call));
-        }
+        },
         FfiFunctionKind::MutMethod | FfiFunctionKind::RefMethod => {
-            let sig_params = f
-                .params
-                .iter()
-                .map(|p| format!("{} -> ", hl_type(&p.ty)))
-                .collect::<String>();
+            let sig_params =
+                f.params.iter().map(|p| format!("{} -> ", hl_type(&p.ty))).collect::<String>();
             let ret = match &f.return_type {
                 Some(ty) => format!("IO {}", hl_type(ty)),
                 None => "IO ()".to_owned(),
             };
             out.push('\n');
             emit_haddock(out, &f.docs);
-            out.push_str(&format!(
-                "{} :: {} -> {}{}\n",
-                hs_fn, struct_name, sig_params, ret
-            ));
+            out.push_str(&format!("{} :: {} -> {}{}\n", hs_fn, struct_name, sig_params, ret));
 
             let pnames: Vec<_> = f.params.iter().map(|p| p.name.to_lower_camel_case()).collect();
-            let plist = if pnames.is_empty() {
-                String::new()
-            } else {
-                format!(" {}", pnames.join(" "))
-            };
+            let plist =
+                if pnames.is_empty() { String::new() } else { format!(" {}", pnames.join(" ")) };
 
             if f.borsh_params.is_empty() {
                 let unwrapped = if f.params.is_empty() {
@@ -381,8 +372,8 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
                     hs_fn, struct_name, plist, full_call
                 ));
             }
-        }
-        FfiFunctionKind::Destructor => {}
+        },
+        FfiFunctionKind::Destructor => {},
     }
 }
 
@@ -401,11 +392,7 @@ fn build_borsh_call(f: &FfiFunction, c_func: &str, self_arg: Option<&str>) -> St
             let len_var = format!("{}Len", hs);
             args.push(ptr_var.clone());
             args.push(len_var.clone());
-            borsh_wraps.push((
-                hs,
-                ptr_var,
-                len_var,
-            ));
+            borsh_wraps.push((hs, ptr_var, len_var));
         } else {
             args.push(unwrap_param(&hs, &p.ty));
         }
@@ -415,10 +402,7 @@ fn build_borsh_call(f: &FfiFunction, c_func: &str, self_arg: Option<&str>) -> St
 
     let mut result = call;
     for (name, ptr_var, len_var) in borsh_wraps.iter().rev() {
-        result = format!(
-            "withBorshArg {} $ \\{} {} -> {}",
-            name, ptr_var, len_var, result
-        );
+        result = format!("withBorshArg {} $ \\{} {} -> {}", name, ptr_var, len_var, result);
     }
     result
 }
@@ -447,7 +431,9 @@ fn ffi_type(ty: &FfiType) -> String {
         FfiType::Enum(_) => "Word8".to_owned(),
         FfiType::Unit => "()".to_owned(),
         FfiType::ValueType(name) => name.clone(),
-        FfiType::Result(_, _) | FfiType::Option(_) | FfiType::String | FfiType::Vec(_) => "()".to_owned(),
+        FfiType::Result(..) | FfiType::Option(_) | FfiType::String | FfiType::Vec(_) => {
+            "()".to_owned()
+        },
         FfiType::Int(w) | FfiType::Uint(w) => unreachable!("unsupported bit width: {w}"),
     }
 }
@@ -467,7 +453,7 @@ fn unwrap_param(name: &str, ty: &FfiType) -> String {
     match ty {
         FfiType::Enum(enum_name) => {
             format!("(let ({enum_name} {name}') = {name} in {name}')")
-        }
+        },
         _ => name.to_owned(),
     }
 }
@@ -476,8 +462,16 @@ fn unwrap_param(name: &str, ty: &FfiType) -> String {
 mod tests {
     use super::*;
     use crate::ir::{
-        FfiEnum, FfiField, FfiFunction, FfiFunctionKind, FfiModule, FfiParam, FfiSafety, FfiType,
-        FfiValueType, ParsedFile,
+        FfiEnum,
+        FfiField,
+        FfiFunction,
+        FfiFunctionKind,
+        FfiModule,
+        FfiParam,
+        FfiSafety,
+        FfiType,
+        FfiValueType,
+        ParsedFile,
     };
 
     fn make_module_with_snake_case_fn() -> ParsedFile {
@@ -571,10 +565,7 @@ mod tests {
             }],
             value_types: vec![FfiValueType {
                 name: "GameState".to_owned(),
-                fields: vec![FfiField {
-                    name: "score".to_owned(),
-                    ty: FfiType::Uint(32),
-                }],
+                fields: vec![FfiField { name: "score".to_owned(), ty: FfiType::Uint(32) }],
                 has_eq: false,
                 has_show: false,
                 has_ord: false,
@@ -611,10 +602,7 @@ mod tests {
             !output.contains("new_dir"),
             "output should not contain snake_case param name 'new_dir'"
         );
-        assert!(
-            output.contains("newDir"),
-            "output should contain camelCase param name 'newDir'"
-        );
+        assert!(output.contains("newDir"), "output should contain camelCase param name 'newDir'");
     }
 
     #[test]
@@ -652,10 +640,7 @@ mod tests {
                         c_name: "math_add".to_owned(),
                         kind: FfiFunctionKind::MutMethod,
                         safety: FfiSafety::Unsafe,
-                        params: vec![FfiParam {
-                            name: "x".to_owned(),
-                            ty: FfiType::Int(64),
-                        }],
+                        params: vec![FfiParam { name: "x".to_owned(), ty: FfiType::Int(64) }],
                         return_type: Some(FfiType::Int(64)),
                         docs: vec![],
                         borsh_return: false,
@@ -697,10 +682,7 @@ mod tests {
                         c_name: "math_compute".to_owned(),
                         kind: FfiFunctionKind::RefMethod,
                         safety: FfiSafety::Safe,
-                        params: vec![FfiParam {
-                            name: "x".to_owned(),
-                            ty: FfiType::Int(64),
-                        }],
+                        params: vec![FfiParam { name: "x".to_owned(), ty: FfiType::Int(64) }],
                         return_type: Some(FfiType::Int(64)),
                         docs: vec![],
                         borsh_return: false,
@@ -742,10 +724,7 @@ mod tests {
                         c_name: "io_read".to_owned(),
                         kind: FfiFunctionKind::MutMethod,
                         safety: FfiSafety::Interruptible,
-                        params: vec![FfiParam {
-                            name: "buf".to_owned(),
-                            ty: FfiType::Uint(64),
-                        }],
+                        params: vec![FfiParam { name: "buf".to_owned(), ty: FfiType::Uint(64) }],
                         return_type: Some(FfiType::Int(64)),
                         docs: vec![],
                         borsh_return: false,
@@ -888,10 +867,7 @@ mod tests {
             modules: vec![],
             value_types: vec![FfiValueType {
                 name: "Pos".to_owned(),
-                fields: vec![FfiField {
-                    name: "x".to_owned(),
-                    ty: FfiType::Int(32),
-                }],
+                fields: vec![FfiField { name: "x".to_owned(), ty: FfiType::Int(32) }],
                 has_eq: false,
                 has_show: false,
                 has_ord: false,
@@ -920,10 +896,7 @@ mod tests {
             value_types: vec![],
         };
         let output = generate(&parsed, "Bindings");
-        assert!(
-            !output.contains("BorshSize"),
-            "no borsh deriving without value types: {output}"
-        );
+        assert!(!output.contains("BorshSize"), "no borsh deriving without value types: {output}");
     }
 
     #[test]
@@ -933,10 +906,10 @@ mod tests {
             modules: vec![],
             value_types: vec![FfiValueType {
                 name: "Point".to_owned(),
-                fields: vec![
-                    FfiField { name: "x".to_owned(), ty: FfiType::Int(32) },
-                    FfiField { name: "y".to_owned(), ty: FfiType::Int(32) },
-                ],
+                fields: vec![FfiField { name: "x".to_owned(), ty: FfiType::Int(32) }, FfiField {
+                    name: "y".to_owned(),
+                    ty: FfiType::Int(32),
+                }],
                 has_eq: true,
                 has_show: true,
                 has_ord: false,
@@ -1131,10 +1104,7 @@ mod tests {
         ]);
         let output = generate(&parsed, "Bindings");
         assert!(output.contains("getValue :: Engine -> IO Int64"), "sig: {output}");
-        assert!(
-            output.contains("getValue (Engine fp) = withForeignPtr fp"),
-            "body: {output}"
-        );
+        assert!(output.contains("getValue (Engine fp) = withForeignPtr fp"), "body: {output}");
     }
 
     #[test]
@@ -1165,10 +1135,10 @@ mod tests {
                 c_name: "engine_compute".to_owned(),
                 kind: FfiFunctionKind::MutMethod,
                 safety: FfiSafety::Safe,
-                params: vec![
-                    FfiParam { name: "a".to_owned(), ty: FfiType::Int(64) },
-                    FfiParam { name: "b".to_owned(), ty: FfiType::Int(64) },
-                ],
+                params: vec![FfiParam { name: "a".to_owned(), ty: FfiType::Int(64) }, FfiParam {
+                    name: "b".to_owned(),
+                    ty: FfiType::Int(64),
+                }],
                 return_type: Some(FfiType::Int(64)),
                 docs: vec![],
                 borsh_return: false,
@@ -1202,7 +1172,10 @@ mod tests {
         let output = generate(&parsed, "Bindings");
         assert!(output.contains("snapshot :: Engine -> IO State"), "sig: {output}");
         assert!(output.contains("fromBorshBuffer =<<"), "uses fromBorshBuffer: {output}");
-        assert!(output.contains("IO (Ptr BorshBufferRaw)"), "foreign import returns BorshBufferRaw ptr: {output}");
+        assert!(
+            output.contains("IO (Ptr BorshBufferRaw)"),
+            "foreign import returns BorshBufferRaw ptr: {output}"
+        );
     }
 
     #[test]
@@ -1228,7 +1201,10 @@ mod tests {
         assert!(output.contains("withBorshArg config"), "uses withBorshArg: {output}");
         assert!(output.contains("configPtr"), "uses ptr var: {output}");
         assert!(output.contains("configLen"), "uses len var: {output}");
-        assert!(!output.contains("useAsCStringLen"), "should not contain useAsCStringLen: {output}");
+        assert!(
+            !output.contains("useAsCStringLen"),
+            "should not contain useAsCStringLen: {output}"
+        );
     }
 
     #[test]
@@ -1488,7 +1464,12 @@ mod tests {
             destructor(),
         ]);
         let output = generate(&parsed, "Bindings");
-        assert!(output.contains("Int8 -> Int16 -> Int32 -> Int64 -> Word8 -> Word16 -> Word32 -> Word64 -> CBool"), "ffi types: {output}");
+        assert!(
+            output.contains(
+                "Int8 -> Int16 -> Int32 -> Int64 -> Word8 -> Word16 -> Word32 -> Word64 -> CBool"
+            ),
+            "ffi types: {output}"
+        );
     }
 
     #[test]
@@ -1520,10 +1501,7 @@ mod tests {
                 c_name: "engine_set_name".to_owned(),
                 kind: FfiFunctionKind::MutMethod,
                 safety: FfiSafety::Safe,
-                params: vec![FfiParam {
-                    name: "name".to_owned(),
-                    ty: FfiType::String,
-                }],
+                params: vec![FfiParam { name: "name".to_owned(), ty: FfiType::String }],
                 return_type: None,
                 docs: vec![],
                 borsh_return: false,
@@ -1577,7 +1555,10 @@ mod tests {
             destructor(),
         ]);
         let output = generate(&parsed, "Bindings");
-        assert!(output.contains("[Word64] -> IO ()"), "Vec<u64> param should become [Word64]: {output}");
+        assert!(
+            output.contains("[Word64] -> IO ()"),
+            "Vec<u64> param should become [Word64]: {output}"
+        );
         assert!(output.contains("withBorshArg items"), "should use withBorshArg: {output}");
     }
 

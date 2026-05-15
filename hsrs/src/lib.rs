@@ -1,7 +1,4 @@
-#![allow(
-    clippy::missing_docs_in_private_items,
-    clippy::cargo,
-)]
+#![allow(clippy::missing_docs_in_private_items, clippy::cargo, clippy::expl_impl_clone_on_copy)]
 
 mod borsh_buffer;
 mod ffi_utils;
