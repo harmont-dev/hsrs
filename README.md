@@ -1,47 +1,119 @@
 # hsrs
 
-Type-safe Haskell FFI bindings from annotated Rust.
+Call Rust from Haskell with type-safe, automatically generated FFI bindings.
 
-`hsrs` generates C FFI exports via [safer-ffi](https://github.com/getditto/safer_ffi).
-`hsrs-codegen` reads the annotated Rust source and emits idiomatic Haskell with newtypes,
-`ForeignPtr` management, and pattern synonyms — preserving the type safety that the C layer erases.
+Annotate your Rust types and functions, run the code generator, and get idiomatic Haskell that handles memory management, serialization, and type conversions for you.
 
-## Supported types
+## Quick start
 
-| Rust | Haskell | Transfer |
-|------|---------|----------|
-| `#[hsrs::data_type]` struct | `ForeignPtr` newtype | Opaque pointer |
-| `#[hsrs::enumeration]` enum | `Word8` newtype + pattern synonyms | `repr(u8)` |
-| `#[hsrs::value_type]` struct | `data` record + borsh deriving | Borsh-serialized bytes |
-| `Result<T, E>` | `Either E T` | Borsh-serialized bytes |
-| `Option<T>` | `Maybe T` | Borsh-serialized bytes |
-| Primitives (`i32`, `u64`, `bool`, ...) | `Int32`, `Word64`, `CBool`, ... | Direct FFI |
-
-## Example
-
-### Rust
+### 1. Annotate your Rust code
 
 ```rust
-#[derive(Debug, PartialEq, Eq)]
-#[hsrs::enumeration]
-pub enum Register {
-    Reg0,
-    Reg1,
-    Count,
-}
-
-#[derive(Debug, PartialEq, Eq)]
 #[hsrs::value_type]
 pub struct Point {
     pub x: i32,
     pub y: i32,
 }
 
+#[hsrs::module(value_types(Point))]
+mod canvas {
+    #[hsrs::data_type]
+    pub struct Canvas {
+        points: Vec<Point>,
+    }
+
+    impl Canvas {
+        #[hsrs::function]
+        pub fn new() -> Self { Self { points: vec![] } }
+
+        #[hsrs::function]
+        pub fn add_point(&mut self, p: Point) { self.points.push(p); }
+
+        #[hsrs::function]
+        pub fn count(&self) -> u64 { self.points.len() as u64 }
+    }
+}
+```
+
+### 2. Generate Haskell bindings
+
+```sh
+cargo run -p hsrs-codegen -- src/lib.rs -o Bindings.hs
+```
+
+### 3. Use from Haskell
+
+```haskell
+import Bindings
+
+main :: IO ()
+main = do
+  c <- new
+  addPoint c (Point 10 20)
+  n <- count c
+  print n  -- 1
+```
+
+That's it. Memory is managed automatically via `ForeignPtr`, and complex types like `Point` are serialized across the boundary with [Borsh](https://borsh.io).
+
+## Setup
+
+**Rust side** — add `hsrs` to your crate:
+
+```toml
+[lib]
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+hsrs = { git = "https://github.com/harmont-dev/hsrs" }
+```
+
+**Haskell side** — add the `hsrs` runtime package:
+
+```cabal
+build-depends:
+    hsrs >= 0.1 && < 0.2
+```
+
+This pulls in Borsh serialization automatically — no extra dependencies needed.
+
+> Until published on Hackage, add as a local package in your `cabal.project`:
+> ```
+> packages: .
+>           /path/to/hsrs/hsrs-haskell
+> ```
+
+## What you can annotate
+
+| Annotation | What it does | Haskell result |
+|---|---|---|
+| `#[hsrs::data_type]` | Opaque struct passed by pointer | `ForeignPtr` newtype with automatic cleanup |
+| `#[hsrs::enumeration]` | C-compatible enum (`repr(u8)`) | `Word8` newtype with pattern synonyms |
+| `#[hsrs::value_type]` | Struct passed by value via Borsh | `data` record with Borsh deriving |
+| `#[hsrs::function]` | Method exported over FFI | Type-safe Haskell wrapper |
+| `#[hsrs::module]` | Groups a data type with its methods | Generates all FFI glue for the type |
+
+`Result<T, E>` becomes `Either E T` and `Option<T>` becomes `Maybe T`, both serialized transparently.
+
+## Full example
+
+<details>
+<summary>A small VM with enums, value types, Result, and Option</summary>
+
+### Rust
+
+```rust
+#[derive(Debug, PartialEq, Eq)]
+#[hsrs::enumeration]
+pub enum Register { Reg0, Reg1, Count }
+
 #[derive(Debug, PartialEq, Eq)]
 #[hsrs::value_type]
-pub struct VmError {
-    pub code: u32,
-}
+pub struct Point { pub x: i32, pub y: i32 }
+
+#[derive(Debug, PartialEq, Eq)]
+#[hsrs::value_type]
+pub struct VmError { pub code: u32 }
 
 #[hsrs::module(value_types(Point, VmError))]
 mod quecto_vm {
@@ -54,12 +126,6 @@ mod quecto_vm {
     impl QuectoVm {
         #[hsrs::function]
         pub fn new() -> Self { /* ... */ }
-
-        #[hsrs::function]
-        pub fn add(&mut self, a: Register, b: Register) { /* ... */ }
-
-        #[hsrs::function]
-        pub fn load(&mut self, r: Register) -> i64 { /* ... */ }
 
         #[hsrs::function]
         pub fn store(&mut self, r: Register, v: i64) { /* ... */ }
@@ -98,70 +164,16 @@ data VmError = VmError
   deriving (BorshSize, ToBorsh, FromBorsh) via AsStruct VmError
 
 data QuectoVmRaw
-
 newtype QuectoVm = QuectoVm (ForeignPtr QuectoVmRaw)
 
-new :: IO QuectoVm
-new = do
-  ptr <- c_quectoVmNew
-  fp  <- newForeignPtr c_quectoVmFree ptr
-  pure (QuectoVm fp)
-
-add :: QuectoVm -> Register -> Register -> IO ()
-add (QuectoVm fp) a b =
-  withForeignPtr fp $ \ptr ->
-    c_quectoVmAdd ptr (let (Register a') = a in a') (let (Register b') = b in b')
-
-snapshot :: QuectoVm -> IO Point
-snapshot (QuectoVm fp) = withForeignPtr fp $ \ptr ->
-  fromBorshBuffer =<< c_quectoVmSnapshot ptr
-
-safeDiv :: QuectoVm -> Register -> Register -> IO (Either VmError Int64)
-safeDiv (QuectoVm fp) a b = withForeignPtr fp $ \ptr ->
-  fromBorshBuffer =<< c_quectoVmSafeDiv ptr
-    (let (Register a') = a in a') (let (Register b') = b in b')
-
-nonzero :: QuectoVm -> Register -> IO (Maybe Int64)
-nonzero (QuectoVm fp) r = withForeignPtr fp $ \ptr ->
-  fromBorshBuffer =<< c_quectoVmNonzero ptr (let (Register r') = r in r')
+new       :: IO QuectoVm
+store     :: QuectoVm -> Register -> Int64 -> IO ()
+snapshot  :: QuectoVm -> IO Point
+safeDiv   :: QuectoVm -> Register -> Register -> IO (Either VmError Int64)
+nonzero   :: QuectoVm -> Register -> IO (Maybe Int64)
 ```
 
-## Usage
-
-Add `hsrs` to your crate:
-
-```toml
-[lib]
-crate-type = ["lib", "staticlib"]
-
-[dependencies]
-hsrs = { git = "https://github.com/harmont-dev/hsrs" }
-```
-
-Annotate your types, then generate bindings:
-
-```sh
-cargo run -p hsrs-codegen -- path/to/lib.rs -o Bindings.hs
-```
-
-On the Haskell side, add `hsrs` to your build-depends:
-
-```cabal
-build-depends:
-    hsrs >= 0.1 && < 0.2
-```
-
-This brings in Borsh serialization support and the FFI buffer utilities
-automatically — no need to depend on `borsh` separately.
-
-### Installing the Haskell package from source
-
-Until published on Hackage, add as a local dependency in your `cabal.project`:
-
-```
-packages: .
-          /path/to/hsrs/hsrs-haskell
-```
+</details>
 
 ## License
 
