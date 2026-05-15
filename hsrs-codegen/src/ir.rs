@@ -65,6 +65,7 @@ pub struct FfiParam {
     pub ty: FfiType,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum FfiType {
     Int(u8),
     Uint(u8),
