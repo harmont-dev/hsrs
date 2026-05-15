@@ -248,19 +248,19 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
             ));
 
             let pnames: Vec<_> = f.params.iter().map(|p| p.name.to_lower_camel_case()).collect();
-            let unwrapped = f
-                .params
-                .iter()
-                .map(|p| unwrap_param(&p.name.to_lower_camel_case(), &p.ty))
-                .collect::<Vec<_>>()
-                .join(" ");
 
             if pnames.is_empty() {
                 out.push_str(&format!(
                     "{} = do\n  ptr <- c_{}\n  fp <- newForeignPtr c_{} ptr\n  pure ({} fp)\n",
                     hs_fn, hs_c, free_hs, struct_name
                 ));
-            } else {
+            } else if f.borsh_params.is_empty() {
+                let unwrapped = f
+                    .params
+                    .iter()
+                    .map(|p| unwrap_param(&p.name.to_lower_camel_case(), &p.ty))
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 out.push_str(&format!(
                     "{} {} = do\n  ptr <- c_{} {}\n  fp <- newForeignPtr c_{} ptr\n  pure ({} fp)\n",
                     hs_fn,
@@ -270,6 +270,35 @@ fn generate_high_level(out: &mut String, f: &FfiFunction, struct_name: &str, mod
                     free_hs,
                     struct_name
                 ));
+            } else {
+                let mut c_args = Vec::new();
+                let mut borsh_wraps: Vec<(String, String, String)> = Vec::new();
+                for p in &f.params {
+                    let hs = p.name.to_lower_camel_case();
+                    if f.borsh_params.contains(&p.name) {
+                        let ptr_var = format!("{}Ptr", hs);
+                        let len_var = format!("{}Len", hs);
+                        c_args.push(ptr_var.clone());
+                        c_args.push(len_var.clone());
+                        borsh_wraps.push((hs, ptr_var, len_var));
+                    } else {
+                        c_args.push(unwrap_param(&hs, &p.ty));
+                    }
+                }
+                out.push_str(&format!("{} {} =\n", hs_fn, pnames.join(" ")));
+                let mut indent = 2usize;
+                for (name, ptr_var, len_var) in &borsh_wraps {
+                    out.push_str(&format!(
+                        "{}withBorshArg {} $ \\{} {} ->\n",
+                        " ".repeat(indent), name, ptr_var, len_var
+                    ));
+                    indent = indent.saturating_add(2);
+                }
+                let ind = " ".repeat(indent);
+                out.push_str(&format!("{}do\n", ind));
+                out.push_str(&format!("{}  ptr <- c_{} {}\n", ind, hs_c, c_args.join(" ")));
+                out.push_str(&format!("{}  fp <- newForeignPtr c_{} ptr\n", ind, free_hs));
+                out.push_str(&format!("{}  pure ({} fp)\n", ind, struct_name));
             }
         }
         FfiFunctionKind::MutMethod | FfiFunctionKind::RefMethod if f.borsh_return => {
@@ -1395,6 +1424,39 @@ mod tests {
         let output = generate(&parsed);
         assert!(output.contains("-- | The engine module."), "module doc: {output}");
         assert!(output.contains("-- | Create engine."), "fn doc: {output}");
+    }
+
+    #[test]
+    fn constructor_with_borsh_param() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "create".to_owned(),
+                c_name: "engine_create".to_owned(),
+                kind: FfiFunctionKind::Constructor,
+                safety: FfiSafety::Safe,
+                params: vec![FfiParam {
+                    name: "config".to_owned(),
+                    ty: FfiType::ValueType("Config".to_owned()),
+                }],
+                return_type: None,
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec!["config".to_owned()],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("withBorshArg config"), "should use withBorshArg: {output}");
+        assert!(output.contains("newForeignPtr"), "should still wrap with ForeignPtr: {output}");
+        assert!(output.contains("pure (Engine fp)"), "should still wrap result: {output}");
+        assert!(
+            output.contains("withBorshArg config $ \\configPtr configLen ->\n"),
+            "do block should be inside lambda, not appended: {output}"
+        );
+        assert!(
+            output.contains("ptr <- c_engineCreate configPtr configLen"),
+            "c_call should be inside do block: {output}"
+        );
     }
 
     #[test]

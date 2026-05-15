@@ -144,8 +144,24 @@ Annotate your types, then generate bindings:
 cargo run -p hsrs-codegen -- path/to/lib.rs -o Bindings.hs
 ```
 
-On the Haskell side, add [`borsh`](https://hackage.haskell.org/package/borsh) to your
-build-depends for value type deserialization.
+On the Haskell side, add `hsrs` to your build-depends:
+
+```cabal
+build-depends:
+    hsrs >= 0.1 && < 0.2
+```
+
+This brings in Borsh serialization support and the FFI buffer utilities
+automatically — no need to depend on `borsh` separately.
+
+### Installing the Haskell package from source
+
+Until published on Hackage, add as a local dependency in your `cabal.project`:
+
+```
+packages: .
+          /path/to/hsrs/hsrs-haskell
+```
 
 ## License
 
