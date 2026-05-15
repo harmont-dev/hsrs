@@ -447,7 +447,7 @@ fn ffi_type(ty: &FfiType) -> String {
         FfiType::Enum(_) => "Word8".to_owned(),
         FfiType::Unit => "()".to_owned(),
         FfiType::ValueType(name) => name.clone(),
-        FfiType::Result(_, _) | FfiType::Option(_) | FfiType::String => "()".to_owned(),
+        FfiType::Result(_, _) | FfiType::Option(_) | FfiType::String | FfiType::Vec(_) => "()".to_owned(),
         FfiType::Int(w) | FfiType::Uint(w) => unreachable!("unsupported bit width: {w}"),
     }
 }
@@ -458,6 +458,7 @@ fn hl_type(ty: &FfiType) -> String {
         FfiType::Result(ok, err) => format!("(Either {} {})", hl_type(err), hl_type(ok)),
         FfiType::Option(inner) => format!("(Maybe {})", hl_type(inner)),
         FfiType::String => "Text".to_owned(),
+        FfiType::Vec(inner) => format!("[{}]", hl_type(inner)),
         other => ffi_type(other),
     }
 }
@@ -1533,5 +1534,50 @@ mod tests {
         let output = generate(&parsed);
         assert!(output.contains(":: Engine -> Text -> IO ()"), "sig should use Text: {output}");
         assert!(output.contains("withBorshArg name"), "should use withBorshArg: {output}");
+    }
+
+    #[test]
+    fn vec_return_type_becomes_list() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "items".to_owned(),
+                c_name: "engine_items".to_owned(),
+                kind: FfiFunctionKind::RefMethod,
+                safety: FfiSafety::Safe,
+                params: vec![],
+                return_type: Some(FfiType::Vec(Box::new(FfiType::Int(32)))),
+                docs: vec![],
+                borsh_return: true,
+                borsh_params: vec![],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("IO [Int32]"), "Vec<i32> should become [Int32]: {output}");
+        assert!(output.contains("fromBorshBuffer"), "should use fromBorshBuffer: {output}");
+    }
+
+    #[test]
+    fn vec_param_uses_with_borsh_arg() {
+        let parsed = make_simple_module(vec![
+            FfiFunction {
+                rust_name: "set_items".to_owned(),
+                c_name: "engine_set_items".to_owned(),
+                kind: FfiFunctionKind::MutMethod,
+                safety: FfiSafety::Safe,
+                params: vec![FfiParam {
+                    name: "items".to_owned(),
+                    ty: FfiType::Vec(Box::new(FfiType::Uint(64))),
+                }],
+                return_type: None,
+                docs: vec![],
+                borsh_return: false,
+                borsh_params: vec!["items".to_owned()],
+            },
+            destructor(),
+        ]);
+        let output = generate(&parsed);
+        assert!(output.contains("[Word64] -> IO ()"), "Vec<u64> param should become [Word64]: {output}");
+        assert!(output.contains("withBorshArg items"), "should use withBorshArg: {output}");
     }
 }

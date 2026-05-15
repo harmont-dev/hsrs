@@ -77,4 +77,5 @@ pub enum FfiType {
     Result(Box<FfiType>, Box<FfiType>),
     Option(Box<FfiType>),
     String,
+    Vec(Box<FfiType>),
 }

@@ -375,3 +375,32 @@ fn string_type_round_trip() {
     assert!(output.contains("fromBorshBuffer"), "String return uses fromBorshBuffer: {output}");
     assert!(output.contains("withBorshArg name"), "String param uses withBorshArg: {output}");
 }
+
+#[test]
+fn vec_type_round_trip() {
+    let src = r#"
+        #[hsrs::value_type]
+        pub struct Point { pub x: i32, pub y: i32 }
+
+        #[hsrs::module(value_types(Point))]
+        mod canvas {
+            #[hsrs::data_type]
+            pub struct Canvas { x: i32 }
+            impl Canvas {
+                #[hsrs::function]
+                pub fn new() -> Self { Self { x: 0 } }
+                #[hsrs::function]
+                pub fn points(&self) -> Vec<Point> {}
+                #[hsrs::function]
+                pub fn add_points(&mut self, pts: Vec<Point>) {}
+                #[hsrs::function]
+                pub fn counts(&self) -> Vec<u64> {}
+            }
+        }
+    "#;
+    let output = source_to_haskell(src);
+    assert!(output.contains(":: Canvas -> IO [Point]"), "Vec<Point> return: {output}");
+    assert!(output.contains(":: Canvas -> [Point] -> IO ()"), "Vec<Point> param: {output}");
+    assert!(output.contains(":: Canvas -> IO [Word64]"), "Vec<u64> return: {output}");
+    assert!(output.contains("withBorshArg pts"), "Vec param uses withBorshArg: {output}");
+}

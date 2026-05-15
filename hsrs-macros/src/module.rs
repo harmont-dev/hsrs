@@ -232,7 +232,7 @@ fn needs_borsh(ty: &Type, value_type_names: &HashSet<String>) -> bool {
         }
         if let Some(seg) = tp.path.segments.last() {
             let name = seg.ident.to_string();
-            return matches!(name.as_str(), "Result" | "Option");
+            return matches!(name.as_str(), "Result" | "Option" | "Vec");
         }
     }
     false

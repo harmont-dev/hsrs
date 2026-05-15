@@ -306,7 +306,7 @@ fn parse_module(
 fn is_borsh_type(ty: &FfiType) -> bool {
     matches!(
         ty,
-        FfiType::ValueType(_) | FfiType::Result(_, _) | FfiType::Option(_) | FfiType::String
+        FfiType::ValueType(_) | FfiType::Result(_, _) | FfiType::Option(_) | FfiType::String | FfiType::Vec(_)
     )
 }
 
@@ -442,6 +442,16 @@ fn resolve_type(
                             let inner =
                                 resolve_type(type_args[0], known_enums, known_value_types)?;
                             return Ok(FfiType::Option(Box::new(inner)));
+                        }
+                        "Vec" => {
+                            if type_args.len() != 1 {
+                                return Err(
+                                    "Vec requires exactly 1 type argument".to_owned()
+                                );
+                            }
+                            let inner =
+                                resolve_type(type_args[0], known_enums, known_value_types)?;
+                            return Ok(FfiType::Vec(Box::new(inner)));
                         }
                         _ => return Err(format!("unsupported generic type: {name}")),
                     }
@@ -1300,11 +1310,11 @@ mod tests {
                 pub struct T { x: i32 }
                 impl T {
                     #[hsrs::function]
-                    pub fn bad(&self) -> Vec<i32> { vec![] }
+                    pub fn bad(&self) -> HashMap<i32, i32> { todo!() }
                 }
             }
         "#;
-        assert_parse_err(src, "unsupported generic type: Vec");
+        assert_parse_err(src, "unsupported generic type: HashMap");
     }
 
     #[test]
@@ -1383,5 +1393,78 @@ mod tests {
         "#);
         let f = &parsed.modules[0].functions[0];
         assert_eq!(f.borsh_params, vec!["name"]);
+    }
+
+    #[test]
+    fn resolves_vec_type() {
+        let parsed = parse_source(r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct S { x: i32 }
+                impl S {
+                    #[hsrs::function]
+                    pub fn items(&self) -> Vec<i32> {}
+                }
+            }
+        "#);
+        let f = &parsed.modules[0].functions[0];
+        assert!(matches!(f.return_type, Some(FfiType::Vec(_))));
+        assert!(f.borsh_return);
+    }
+
+    #[test]
+    fn vec_param_is_borsh() {
+        let parsed = parse_source(r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct S { x: i32 }
+                impl S {
+                    #[hsrs::function]
+                    pub fn add_items(&mut self, items: Vec<i32>) {}
+                }
+            }
+        "#);
+        let f = &parsed.modules[0].functions[0];
+        assert_eq!(f.borsh_params, vec!["items"]);
+    }
+
+    #[test]
+    fn vec_of_value_type() {
+        let parsed = parse_source(r#"
+            #[hsrs::value_type]
+            pub struct Point { pub x: i32, pub y: i32 }
+
+            #[hsrs::module(value_types(Point))]
+            mod m {
+                #[hsrs::data_type]
+                pub struct S { x: i32 }
+                impl S {
+                    #[hsrs::function]
+                    pub fn points(&self) -> Vec<Point> {}
+                }
+            }
+        "#);
+        let f = &parsed.modules[0].functions[0];
+        match &f.return_type {
+            Some(FfiType::Vec(inner)) => assert!(matches!(**inner, FfiType::ValueType(ref n) if n == "Point")),
+            _ => panic!("expected Vec(ValueType(Point))"),
+        }
+    }
+
+    #[test]
+    fn error_on_vec_wrong_arity() {
+        assert_parse_err(r#"
+            #[hsrs::module]
+            mod m {
+                #[hsrs::data_type]
+                pub struct S { x: i32 }
+                impl S {
+                    #[hsrs::function]
+                    pub fn f(&self) -> Vec<i32, i32> {}
+                }
+            }
+        "#, "Vec requires exactly 1 type argument");
     }
 }
